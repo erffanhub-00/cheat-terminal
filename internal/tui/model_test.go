@@ -988,3 +988,152 @@ func TestTUIWindowTitle(t *testing.T) {
 		t.Fatalf("Init did not set the window title: %#v", msgs)
 	}
 }
+
+func TestTUIDetailPaneWidth(t *testing.T) {
+	m := New(openSeededStore(t), "test")
+	// The detail pane takes about 45% of the width (v1.4.0 gave it 42
+	// columns at 120); the results list keeps at least 30 columns.
+	for _, tc := range []struct {
+		w, detail, list int
+	}{
+		{90, 34, 30},
+		{100, 44, 30},
+		{110, 49, 35},
+		{120, 54, 40},
+		{160, 72, 62},
+	} {
+		m = update(m, tea.WindowSizeMsg{Width: tc.w, Height: 30})
+		_, d, l := m.layout()
+		if d != tc.detail || l != tc.list {
+			t.Fatalf("layout at %d: detail %d list %d, want %d/%d", tc.w, d, l, tc.detail, tc.list)
+		}
+	}
+	// Below 90 columns there is no detail pane.
+	m = update(m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	if _, d, _ := m.layout(); d != 0 {
+		t.Fatalf("detail pane at 80 columns: %d, want 0", d)
+	}
+	// A long command wraps cleanly inside the wider pane: no view
+	// line is ever wider than the terminal.
+	m = update(m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	for _, ln := range strings.Split(m.View(), "\n") {
+		if lipgloss.Width(ln) > 120 {
+			t.Fatalf("view line wider than the terminal: %q", ln)
+		}
+	}
+}
+
+func TestTUITagChipsReadable(t *testing.T) {
+	// Force the richest color profile so the style checks are real.
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	// Tags render as bright bracket labels with no background fill:
+	// [tag] in a bright color, never dark text on a colored block.
+	lines := tagChips("containers, list, docker", 40)
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{"[containers]", "[list]", "[docker]"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("tag chips missing %q: %q", want, joined)
+		}
+	}
+	if strings.Contains(joined, "48;") {
+		t.Fatalf("tag chips use a background fill: %q", joined)
+	}
+	// ...and the text is a bright foreground color (standard bright
+	// 90-97, or a bright 256-color code) — never a dark one.
+	brightRe := regexp.MustCompile("\x1b\\[[0-9;]*(9[0-7]|38;5;(9|1[0-5]|208))m")
+	if !brightRe.MatchString(joined) {
+		t.Fatalf("tag chips carry no bright ANSI color: %q", joined)
+	}
+	// The level chip and the category chip use the same style.
+	if chip := levelChip(db.LevelEssential); !strings.Contains(chip, "[● Essential]") || strings.Contains(chip, "48;") {
+		t.Fatalf("level chip wrong: %q", chip)
+	}
+	if cc := categoryChip("docker", "Docker"); !strings.Contains(cc, "[Docker]") || strings.Contains(cc, "48;") {
+		t.Fatalf("category chip wrong: %q", cc)
+	}
+	// In the detail pane the section labels are bright (bold white),
+	// not dim: the escape sequence right before "Description:" must
+	// carry color 15, not the dim color 7.
+	m := New(openSeededStore(t), "test")
+	m = update(m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	view := m.View()
+	if !strings.Contains(stripANSI(view), "Description:") {
+		t.Fatalf("detail pane has no Description label")
+	}
+	re := regexp.MustCompile("\x1b\\[[0-9;]*mDescription:")
+	mm := re.FindString(view)
+	if mm == "" {
+		t.Fatalf("no styled Description label in the view")
+	}
+	if strings.Contains(mm, "38;5;7") || strings.Contains(mm, ";37m") {
+		t.Fatalf("detail Description label is dim: %q", mm)
+	}
+	// Bright white: color 15 renders as standard code 97 (or 38;5;15).
+	if !strings.Contains(mm, "97m") && !strings.Contains(mm, "38;5;15") {
+		t.Fatalf("detail Description label is not bright: %q", mm)
+	}
+	// ...and the tags show as bracket labels in the pane.
+	if !strings.Contains(stripANSI(view), "[") {
+		t.Fatalf("detail pane shows no bracket tags")
+	}
+}
+
+func TestTUIEmptySearchHint(t *testing.T) {
+	m := New(openSeededStore(t), "test")
+	m = toList(m)
+	m = update(m, keyMsg("f")) // Essential
+	// "tldr" exists only at Advanced: at Essential the search is
+	// empty, and the list must say the filter is the cause.
+	m = typeText(m, "tldr")
+	if len(m.results) != 0 {
+		t.Fatalf("expected no results for tldr at Essential, got %d", len(m.results))
+	}
+	if !strings.Contains(m.View(), "No matches.") {
+		t.Fatalf("empty list does not say No matches")
+	}
+	if !strings.Contains(m.View(), "Level filter is Essential") {
+		t.Fatalf("empty list does not blame the level filter")
+	}
+	// Clearing the filter brings the results back and the hint goes.
+	m = update(m, keyMsg("esc")) // clear query
+	m = update(m, keyMsg("esc")) // list mode
+	m = update(m, keyMsg("f"))   // Common
+	m = update(m, keyMsg("f"))   // Advanced
+	m = update(m, keyMsg("f"))   // All
+	m = typeText(m, "tldr")
+	if len(m.results) == 0 {
+		t.Fatalf("expected results for tldr at All")
+	}
+	if strings.Contains(m.View(), "Level filter is") {
+		t.Fatalf("hint shown although results exist")
+	}
+}
+
+func TestTUISearchRanking(t *testing.T) {
+	// Typing "docker ps" puts the exact command first, not a
+	// description match.
+	m := New(openSeededStore(t), "test")
+	m = typeText(m, "docker ps")
+	if len(m.results) == 0 || m.results[0].Command != "docker ps" {
+		t.Fatalf("typing 'docker ps' first = %q, want docker ps", firstResultCommand(m))
+	}
+	// A partial word finds its commands while typing.
+	m = New(openSeededStore(t), "test")
+	m = typeText(m, "dock")
+	if len(m.results) == 0 || !strings.HasPrefix(strings.ToLower(m.results[0].Command), "dock") {
+		t.Fatalf("typing 'dock' first = %q", firstResultCommand(m))
+	}
+	// Punctuation in the query does not break the search.
+	m = New(openSeededStore(t), "test")
+	m = typeText(m, "ps | grep")
+	if len(m.results) == 0 || m.results[0].Command != "ps aux | grep nginx" {
+		t.Fatalf("typing 'ps | grep' first = %q", firstResultCommand(m))
+	}
+}
+
+func firstResultCommand(m Model) string {
+	if len(m.results) == 0 {
+		return "<none>"
+	}
+	return m.results[0].Command
+}

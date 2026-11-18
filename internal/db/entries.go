@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // SeedFile is the shape of data/seed.json and of every --import file.
@@ -203,19 +204,218 @@ func (s *Store) list(category string, level, limit int) ([]Entry, error) {
 	return scanEntries(rows)
 }
 
-// ftsMatchExpr builds an FTS5 MATCH expression: every token as a prefix
-// term, ANDed together. Empty input returns "".
-func ftsMatchExpr(query string) string {
-	var parts []string
-	for _, tok := range strings.Fields(query) {
-		tok = strings.ReplaceAll(tok, `"`, "")
-		tok = strings.Trim(tok, `'"`)
-		if tok == "" {
-			continue
+// searchTokens splits a query into lowercase alphanumeric tokens
+// (unicode letters and digits), dropping all punctuation. Punctuation
+// can never break the search this way: "docker ps -a" becomes
+// [docker ps a], "ps | grep" becomes [ps grep], "a:b" becomes [a b].
+func searchTokens(query string) []string {
+	var tokens []string
+	var cur strings.Builder
+	flush := func() {
+		if cur.Len() > 0 {
+			tokens = append(tokens, cur.String())
+			cur.Reset()
 		}
+	}
+	for _, r := range strings.ToLower(query) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			cur.WriteRune(r)
+		} else {
+			flush()
+		}
+	}
+	flush()
+	return tokens
+}
+
+// normalizeQuery collapses a query to single spaces, lower-cased, for
+// the whole-query match tiers in searchScore.
+func normalizeQuery(query string) string {
+	return strings.ToLower(strings.Join(strings.Fields(query), " "))
+}
+
+// ftsEntries returns the FTS5 prefix matches for every token (ANDed),
+// with each entry's bm25 rank for tie-breaking. The FTS table is
+// referenced by its real name: aliasing it breaks the MATCH operator
+// (SQLite reports "no such column: f") and used to make every search
+// silently fall back to a whole-phrase LIKE.
+func (s *Store) ftsEntries(tokens []string, category string, level int) ([]Entry, map[int64]float64, error) {
+	var parts []string
+	for _, tok := range tokens {
 		parts = append(parts, `"`+tok+`"*`)
 	}
-	return strings.Join(parts, " AND ")
+	rows, err := s.db.Query(`
+		SELECT e.id, e.category_id, c.name, c.title, e.command, e.title,
+		       e.description, e.tags, e.example, e.source, e.level, e.favorite,
+		       e.created_at, e.updated_at, entries_fts.rank
+		FROM entries_fts
+		JOIN entries e ON e.id = entries_fts.rowid
+		JOIN categories c ON c.id = e.category_id
+		WHERE entries_fts MATCH ? AND (? = '' OR c.name = ?) AND (? = 0 OR e.level = ?)`,
+		strings.Join(parts, " AND "), category, category, level, level)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	var out []Entry
+	ranks := make(map[int64]float64)
+	for rows.Next() {
+		var e Entry
+		var fav int
+		var rank float64
+		if err := rows.Scan(
+			&e.ID, &e.CategoryID, &e.Category, &e.CategoryTitle, &e.Command, &e.Title,
+			&e.Description, &e.Tags, &e.Example, &e.Source, &e.Level, &fav,
+			&e.CreatedAt, &e.UpdatedAt, &rank); err != nil {
+			return nil, nil, err
+		}
+		e.Favorite = fav != 0
+		out = append(out, e)
+		ranks[e.ID] = rank
+	}
+	return out, ranks, rows.Err()
+}
+
+// tokenLikeSearch returns entries where every token (anyToken=false) or
+// any token (anyToken=true) appears as a substring in the command,
+// title, description, tags or example. Tokens are alphanumeric only,
+// so LIKE wildcards can never appear in them.
+func (s *Store) tokenLikeSearch(tokens []string, category string, level int, anyToken bool) ([]Entry, error) {
+	var conds []string
+	args := []any{category, category, level, level}
+	for _, tok := range tokens {
+		like := "%" + tok + "%"
+		conds = append(conds, `(e.command LIKE ? OR e.title LIKE ? OR e.description LIKE ? OR e.tags LIKE ? OR e.example LIKE ?)`)
+		args = append(args, like, like, like, like, like)
+	}
+	joiner := " AND "
+	if anyToken {
+		joiner = " OR "
+	}
+	q := entryColumns + ` WHERE (? = '' OR c.name = ?) AND (? = 0 OR e.level = ?)
+		AND (` + strings.Join(conds, joiner) + `)`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	return scanEntries(rows)
+}
+
+// searchScore ranks an entry for a query. The whole-query tiers dominate,
+// so the exact command always beats a description that merely mentions
+// the words; token coverage then orders the rest, so a command matching
+// more of the query outranks one matching less of it.
+func searchScore(e Entry, query string, tokens []string) float64 {
+	cmd := strings.ToLower(e.Command)
+	title := strings.ToLower(e.Title)
+	hay := strings.ToLower(e.Description + " " + e.Tags + " " + e.Example)
+	score := 0.0
+	switch {
+	case cmd == query:
+		score += 1000
+	case strings.HasPrefix(cmd, query):
+		score += 500
+	case strings.Contains(cmd, query):
+		score += 300
+	}
+	// The user types the command name first: an entry whose command
+	// starts with the first word is very likely what they want, even
+	// when a later word matches nothing (e.g. `echo "hi"` should show
+	// echo commands, not "history").
+	if len(tokens) > 0 && strings.HasPrefix(cmd, tokens[0]) {
+		score += 150
+	}
+	for _, tok := range tokens {
+		if strings.Contains(cmd, tok) {
+			score += 100
+		}
+		if strings.Contains(title, tok) {
+			score += 20
+		}
+		if strings.Contains(hay, tok) {
+			score += 10
+		}
+	}
+	return score
+}
+
+// Search returns entries matching query, best match first. An empty
+// query lists entries instead. category "" means all categories, level
+// 0 means all levels. limit <= 0 means no limit.
+//
+// How it works: the query is split into alphanumeric tokens, so
+// punctuation can never break it. Candidates come from FTS5 prefix
+// matching (a partial last word matches while typing) plus substring
+// matching (a mid-word fragment matches too); if nothing matches at
+// all, any single token may match, so typing a real word plus a word
+// the database does not know still shows the real word's entries.
+// Candidates are then ranked in Go: exact command, command prefix,
+// command substring, token coverage — with the FTS bm25 rank breaking
+// ties. A query that is only punctuation is searched literally.
+func (s *Store) Search(query, category string, level, limit int) ([]Entry, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return s.list(category, level, limit)
+	}
+	tokens := searchTokens(query)
+	if len(tokens) == 0 {
+		return s.likeSearch(query, category, level, limit)
+	}
+	byID := make(map[int64]Entry)
+	ranks := make(map[int64]float64)
+	if fts, r, err := s.ftsEntries(tokens, category, level); err == nil {
+		for _, e := range fts {
+			byID[e.ID] = e
+		}
+		ranks = r
+	}
+	// Substring matches: every token somewhere in the entry.
+	like, err := s.tokenLikeSearch(tokens, category, level, false)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range like {
+		byID[e.ID] = e
+	}
+	if len(byID) == 0 {
+		// Nothing matched every token: loosen to any token, so the
+		// search still shows something relevant instead of an
+		// empty list.
+		any, err := s.tokenLikeSearch(tokens, category, level, true)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range any {
+			byID[e.ID] = e
+		}
+	}
+	out := make([]Entry, 0, len(byID))
+	for _, e := range byID {
+		out = append(out, e)
+	}
+	norm := normalizeQuery(query)
+	sort.Slice(out, func(i, j int) bool {
+		si, sj := searchScore(out[i], norm, tokens), searchScore(out[j], norm, tokens)
+		if si != sj {
+			return si > sj
+		}
+		ri, iok := ranks[out[i].ID]
+		rj, jok := ranks[out[j].ID]
+		if iok && jok && ri != rj {
+			return ri < rj // lower bm25 rank is more relevant
+		}
+		if iok != jok {
+			return iok // FTS matches before LIKE-only matches
+		}
+		if out[i].Category != out[j].Category {
+			return out[i].Category < out[j].Category
+		}
+		return out[i].Command < out[j].Command
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (s *Store) likeSearch(query, category string, level, limit int) ([]Entry, error) {
@@ -230,38 +430,6 @@ func (s *Store) likeSearch(query, category string, level, limit int) ([]Entry, e
 	rows, err := s.db.Query(q, category, category, level, level, like, like, like, like, like)
 	if err != nil {
 		return nil, err
-	}
-	return scanEntries(rows)
-}
-
-// Search returns entries matching query with live FTS5 prefix search.
-// An empty query lists entries instead. category "" means all categories,
-// level 0 means all levels. limit <= 0 means no limit.
-func (s *Store) Search(query, category string, level, limit int) ([]Entry, error) {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return s.list(category, level, limit)
-	}
-	match := ftsMatchExpr(query)
-	if match == "" {
-		return s.likeSearch(query, category, level, limit)
-	}
-	q := `
-		SELECT e.id, e.category_id, c.name, c.title, e.command, e.title,
-		       e.description, e.tags, e.example, e.source, e.level, e.favorite,
-		       e.created_at, e.updated_at
-		FROM entries_fts f
-		JOIN entries e ON e.id = f.rowid
-		JOIN categories c ON c.id = e.category_id
-		WHERE f MATCH ? AND (? = '' OR c.name = ?) AND (? = 0 OR e.level = ?)
-		ORDER BY rank`
-	if limit > 0 {
-		q += fmt.Sprintf(" LIMIT %d", limit)
-	}
-	rows, err := s.db.Query(q, match, category, category, level, level)
-	if err != nil {
-		// Odd punctuation can break MATCH syntax; fall back to LIKE.
-		return s.likeSearch(query, category, level, limit)
 	}
 	return scanEntries(rows)
 }

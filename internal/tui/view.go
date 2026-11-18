@@ -21,7 +21,6 @@ var (
 	favColor    = lipgloss.Color("11") // bright yellow
 	okColor     = lipgloss.Color("10") // bright green
 	errColor    = lipgloss.Color("9")  // bright red
-	darkText    = lipgloss.Color("0")  // black, for text on chips
 
 	titleStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	headerTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
@@ -69,23 +68,50 @@ func categoryColor(name string) lipgloss.Color {
 	return categoryPalette[h%len(categoryPalette)]
 }
 
-// chip renders a small colored badge: dark bold text on a colored
-// background, e.g. a category or a tag.
-func chip(label string, bg lipgloss.Color) string {
+// brightColor returns the bright variant of an ANSI palette color, so
+// text stays readable on a dark terminal: dark colors (0-7) become
+// their bright counterparts, bright ones stay as they are. Black text
+// on a dark chip background was the unreadable part; bright text with
+// no background fill has no foreground/background pair to get wrong.
+func brightColor(c lipgloss.Color) lipgloss.Color {
+	switch string(c) {
+	case "0":
+		return lipgloss.Color("15")
+	case "1":
+		return lipgloss.Color("9")
+	case "2":
+		return lipgloss.Color("10")
+	case "3":
+		return lipgloss.Color("11")
+	case "4":
+		return lipgloss.Color("12")
+	case "5":
+		return lipgloss.Color("13")
+	case "6":
+		return lipgloss.Color("14")
+	case "8":
+		return lipgloss.Color("7")
+	}
+	return c
+}
+
+// bracketChip renders a label as bright bold colored text in brackets,
+// with no background fill: [label]. The color still identifies the
+// category, tag or level, but the text reads on any terminal.
+func bracketChip(label string, fg lipgloss.Color) string {
 	return lipgloss.NewStyle().
-		Background(bg).
-		Foreground(darkText).
+		Foreground(brightColor(fg)).
 		Bold(true).
-		Render(" " + label + " ")
+		Render("[" + label + "]")
 }
 
-// categoryChip renders a category name as a colored badge.
+// categoryChip renders a category name as a colored bracket label.
 func categoryChip(name, title string) string {
-	return chip(title, categoryColor(name))
+	return bracketChip(title, categoryColor(name))
 }
 
-// tagChips renders tags as colored badges, wrapped to the given width.
-// Each tag takes the next color from the palette.
+// tagChips renders tags as bright bracket labels, wrapped to the
+// given width. Each tag takes the next color from the palette.
 func tagChips(tags string, width int) []string {
 	var names []string
 	for _, t := range strings.Split(tags, ",") {
@@ -99,7 +125,7 @@ func tagChips(tags string, width int) []string {
 	var lines []string
 	cur := ""
 	for i, name := range names {
-		c := chip(name, categoryPalette[i%len(categoryPalette)])
+		c := bracketChip(name, categoryPalette[i%len(categoryPalette)])
 		if cur == "" {
 			cur = c
 			continue
@@ -114,7 +140,9 @@ func tagChips(tags string, width int) []string {
 	return append(lines, cur)
 }
 
-// levelColor is the dot color for a usefulness level.
+// levelColor is the dot color for a usefulness level. Advanced is
+// light gray (7), not dark gray: a dark dot on a dark terminal is
+// barely visible.
 func levelColor(level int) lipgloss.Color {
 	switch level {
 	case db.LevelEssential:
@@ -122,22 +150,20 @@ func levelColor(level int) lipgloss.Color {
 	case db.LevelCommon:
 		return lipgloss.Color("11")
 	case db.LevelAdvanced:
-		return lipgloss.Color("8")
+		return lipgloss.Color("7")
 	default:
 		return dimColor
 	}
 }
 
-// levelChip renders the active usefulness filter as a small badge.
+// levelChip renders the active usefulness filter as a bright bracket
+// label, e.g. [● Essential]. No background fill, so it reads on any
+// terminal — the same style as the tag chips.
 func levelChip(level int) string {
 	if level == 0 {
 		return ""
 	}
-	return lipgloss.NewStyle().
-		Background(levelColor(level)).
-		Foreground(darkText).
-		Bold(true).
-		Render(" ● " + db.LevelName(level) + " ")
+	return bracketChip("● "+db.LevelName(level), levelColor(level))
 }
 
 // View renders the whole screen.
@@ -213,11 +239,13 @@ func (m Model) layout() (sidebarW, detailW, listW int) {
 	}
 	sidebarW = 24
 	detailW = 0
-	switch {
-	case m.width >= 110:
-		detailW = 42
-	case m.width >= 90:
-		detailW = 34
+	if m.width >= 90 {
+		// The detail pane gets about 45% of the width, bounded so
+		// the results list keeps at least 30 columns.
+		detailW = m.width * 45 / 100
+		if maxD := m.width - sidebarW - 2 - 30; detailW > maxD {
+			detailW = maxD
+		}
 	}
 	listW = m.width - sidebarW - detailW - 2 // 1-col gaps
 	if listW < 20 {
@@ -297,6 +325,12 @@ func (m Model) viewList(listW, bodyH int) string {
 	var lines []string
 	if len(m.results) == 0 {
 		lines = append(lines, dimStyle.Render("No matches."))
+		// A silent empty list is usually the level filter, not the
+		// search: say so, instead of letting the user think the
+		// search found nothing.
+		if m.level != 0 {
+			lines = append(lines, dimStyle.Render("Level filter is "+db.LevelName(m.level)+" — press f to change it."))
+		}
 	} else {
 		end := m.offset + m.visibleRows()
 		if end > len(m.results) {
@@ -359,23 +393,23 @@ func (m Model) viewDetail(innerW, innerH int) string {
 		} else {
 			lines = append(lines, chips)
 		}
-		lines = append(lines, dimStyle.Render("Command:"))
+		lines = append(lines, titleStyle.Render("Command:"))
 		for _, ln := range wrapText(e.Command, innerW) {
 			lines = append(lines, titleStyle.Render(ln))
 		}
 		if strings.TrimSpace(e.Description) != "" {
 			lines = append(lines, "")
-			lines = append(lines, dimStyle.Render("Description:"))
+			lines = append(lines, titleStyle.Render("Description:"))
 			lines = append(lines, wrapText(e.Description, innerW)...)
 		}
 		if strings.TrimSpace(e.Example) != "" {
 			lines = append(lines, "")
-			lines = append(lines, dimStyle.Render("Example:"))
+			lines = append(lines, titleStyle.Render("Example:"))
 			lines = append(lines, wrapText(e.Example, innerW)...)
 		}
 		if strings.TrimSpace(e.Tags) != "" {
 			lines = append(lines, "")
-			lines = append(lines, dimStyle.Render("Tags:"))
+			lines = append(lines, titleStyle.Render("Tags:"))
 			lines = append(lines, tagChips(e.Tags, innerW)...)
 		}
 		lines = append(lines, "")

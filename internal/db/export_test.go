@@ -222,7 +222,8 @@ func TestImportUpdateSemantics(t *testing.T) {
 		t.Fatalf("new command stats = %+v, want 1 new", stats)
 	}
 	found, _ := s.Search("my other cmd", "", 0, 0)
-	if len(found) != 1 || found[0].Level != LevelCommon || found[0].Source != "user" {
+	if len(found) == 0 || found[0].Command != "my other cmd" ||
+		found[0].Level != LevelCommon || found[0].Source != "user" {
 		t.Fatalf("new command wrong: %+v", found)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/erffanhub-00/cheat-terminal/data"
@@ -118,6 +119,170 @@ func TestSearch(t *testing.T) {
 	}
 }
 
+// TestSearchRanking pins the search behavior the user asked for: the
+// exact command first, live prefix matching while typing, punctuation
+// that never breaks the query, and sensible results when a word in the
+// query matches nothing at all.
+func TestSearchRanking(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.EnsureSeeded(data.SeedJSON); err != nil {
+		t.Fatalf("EnsureSeeded: %v", err)
+	}
+	top := func(q string) (Entry, error) {
+		got, err := s.Search(q, "", 0, 10)
+		if err != nil {
+			return Entry{}, err
+		}
+		if len(got) == 0 {
+			return Entry{}, errNoResults
+		}
+		return got[0], nil
+	}
+	// Exact commands rank first, ahead of entries whose description
+	// merely mentions the words.
+	for _, tc := range []struct{ query, want string }{
+		{"docker ps", "docker ps"},
+		{"git log --oneline", "git log --oneline"},
+		{"docker ps -a", "docker ps -a"},
+		{"git stash", "git stash"},
+	} {
+		first, err := top(tc.query)
+		if err != nil {
+			t.Fatalf("Search(%q): %v", tc.query, err)
+		}
+		if first.Command != tc.want {
+			t.Fatalf("Search(%q) first = %q, want %q", tc.query, first.Command, tc.want)
+		}
+	}
+	// Prefix matching while typing: a partial word finds its commands,
+	// and the top hit is a command starting with that word.
+	for _, q := range []string{"dock", "doc", "git sta"} {
+		first, err := top(q)
+		if err != nil {
+			t.Fatalf("Search(%q): %v", q, err)
+		}
+		if !strings.HasPrefix(strings.ToLower(first.Command), strings.Fields(q)[0]) {
+			t.Fatalf("Search(%q) first = %q, want a command starting with %q",
+				q, first.Command, strings.Fields(q)[0])
+		}
+	}
+	// Punctuation never breaks the search and never errors: pipes,
+	// slashes, dashes, quotes, colons and stars are literal text.
+	for _, tc := range []struct {
+		query string
+		want  string // a command that must be in the results
+	}{
+		{"ps | grep", "ps aux | grep nginx"},
+		{"find / -name", `find . -name "*.log"`},
+		{"docker ps | grep", "Port unreachable"},
+		{`echo "hi"`, `echo "$TOKEN" | docker login -u user --password-stdin`},
+		{"git log --oneline --graph", "git log --graph --oneline --all"},
+	} {
+		got, err := s.Search(tc.query, "", 0, 0)
+		if err != nil {
+			t.Fatalf("Search(%q): %v", tc.query, err)
+		}
+		if len(got) == 0 {
+			t.Fatalf("Search(%q) returned nothing", tc.query)
+		}
+		found := false
+		for _, e := range got {
+			if e.Command == tc.want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("Search(%q) missing %q (got %d results, first %q)",
+				tc.query, tc.want, len(got), got[0].Command)
+		}
+	}
+	// A query that is only punctuation, or has a lone star, still works.
+	for _, q := range []string{"docker *", "a:b", "(", "docker ps -a"} {
+		got, err := s.Search(q, "", 0, 10)
+		if err != nil {
+			t.Fatalf("Search(%q): %v", q, err)
+		}
+		if len(got) == 0 {
+			t.Fatalf("Search(%q) returned nothing", q)
+		}
+	}
+	// A mid-word fragment matches too (substring tier).
+	got, err := s.Search("ompose", "", 0, 10)
+	if err != nil {
+		t.Fatalf("Search(ompose): %v", err)
+	}
+	if len(got) == 0 || !strings.Contains(strings.ToLower(got[0].Command), "compose") {
+		t.Fatalf("Search(ompose) first = %q, want a compose command", firstCommand(got))
+	}
+	// A real word plus a word the database does not know still shows
+	// the real word's entries (any-token fallback) instead of nothing.
+	got, err = s.Search("echo zzzqqq", "", 0, 10)
+	if err != nil {
+		t.Fatalf("Search(echo zzzqqq): %v", err)
+	}
+	if len(got) == 0 || !strings.HasPrefix(strings.ToLower(got[0].Command), "echo") {
+		t.Fatalf("Search(echo zzzqqq) first = %q, want an echo command", firstCommand(got))
+	}
+	// The level filter still scopes the search: Essential only.
+	got, err = s.Search("docker ps", "", LevelEssential, 0)
+	if err != nil {
+		t.Fatalf("Search with level: %v", err)
+	}
+	if len(got) == 0 {
+		t.Fatalf("level-filtered search returned nothing")
+	}
+	for _, e := range got {
+		if e.Level != LevelEssential {
+			t.Fatalf("level filter leaked: %q level %d", e.Command, e.Level)
+		}
+	}
+	if got[0].Command != "docker ps" {
+		t.Fatalf("level-filtered first = %q, want docker ps", got[0].Command)
+	}
+}
+
+func firstCommand(got []Entry) string {
+	if len(got) == 0 {
+		return "<none>"
+	}
+	return got[0].Command
+}
+
+var errNoResults = errString("no results")
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
+
+// TestSearchTokens pins the tokenizer: punctuation splits tokens, and
+// a query of only punctuation yields no tokens.
+func TestSearchTokens(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		want  []string
+	}{
+		{"docker ps -a", []string{"docker", "ps", "a"}},
+		{"ps | grep", []string{"ps", "grep"}},
+		{"find / -name", []string{"find", "name"}},
+		{`echo "hi"`, []string{"echo", "hi"}},
+		{"a:b", []string{"a", "b"}},
+		{"git log --oneline", []string{"git", "log", "oneline"}},
+		{"  docker   ps  ", []string{"docker", "ps"}},
+		{"|", nil},
+		{"", nil},
+	} {
+		got := searchTokens(tc.query)
+		if len(got) != len(tc.want) {
+			t.Fatalf("searchTokens(%q) = %q, want %q", tc.query, got, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Fatalf("searchTokens(%q) = %q, want %q", tc.query, got, tc.want)
+			}
+		}
+	}
+}
+
 func TestCRUD(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.EnsureSeeded(data.SeedJSON); err != nil {
@@ -170,8 +335,10 @@ func TestCRUD(t *testing.T) {
 		t.Fatalf("DeleteEntry: ok=%v err=%v", ok, err)
 	}
 	got, _ = s.Search("my-test-command", "", 0, 10)
-	if len(got) != 0 {
-		t.Fatalf("deleted entry still searchable")
+	for _, e := range got {
+		if e.ID == id {
+			t.Fatalf("deleted entry still searchable: %+v", e)
+		}
 	}
 	if _, err := s.GetEntry(id); err == nil {
 		t.Fatalf("deleted entry still retrievable")

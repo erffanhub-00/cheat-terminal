@@ -11,11 +11,15 @@ using only the 16 ANSI colors, no truecolor, no special fonts.
 ## What it is
 
 - **1392 commands** seeded from day one: Linux, PowerShell, Docker, Git
-- **Live search** with full-text suggestions as you type
-- **A real browser**: category sidebar, live results, and a detail pane
-  showing the selected command in full. A bold `>` arrow marks the
-  selected row and moves with the cursor; every category has its own
-  color
+- **Live search** with full-text suggestions as you type — partial
+  words match while you type (`dock` finds `docker`), punctuation
+  never breaks it (`docker ps -a`, `ps | grep`), and the best match
+  comes first: the exact command, then command matches, then
+  description and tag matches
+- **A real browser**: category sidebar, live results, and a roomy
+  detail pane (about 45% of the width) showing the selected command in
+  full. A bold `>` arrow marks the selected row and moves with the
+  cursor; every category has its own color
 - **Copy** any command to the clipboard with one key (Enter)
 - **Filter by usefulness**: Essential, Common or Advanced — every
   command is rated, so you can see only the ones that matter
@@ -98,6 +102,20 @@ In **list mode** (after one Esc), these keys also work:
 Just start typing — results filter live as you type, searching the
 command, description, tags and category. `↑` / `↓` move the selection,
 `Tab` switches to the next category, `Enter` copies the command.
+
+The search understands what you type, not just the exact letters:
+partial words match as you type (`dock` finds `docker`, `git sta`
+finds `git status` and `git stash`), every word has to match
+(`docker ps` finds entries with both words), and punctuation is just
+text — `-`, `|`, `/`, `"`, `:`, `--flags` and `(` `)` never break the
+search or empty the results. Results are ranked so the most useful
+match is on top: the exact command first, then commands that start
+with your query, then commands that contain it, then description and
+tag matches.
+
+If a search comes up empty while a level filter is on, the list says
+so — `Level filter is Essential — press f to change it` — because a
+filter hiding everything looks exactly like a broken search.
 
 The search box is always the starting point: the browser opens in
 search mode. If a key seems to do nothing but type into the box, you
@@ -243,7 +261,7 @@ the seed data: 1392 entries in 4 categories. Change the location with
 Your own entries, categories and favorites live in the same file and
 are never touched by seed updates. Databases created by v1.0.0 upgrade
 themselves on the first v1.1.0 run (new columns are added and the seed
-levels are filled in). v1.2.0, v1.3.0 and v1.4.0 need no database
+levels are filled in). v1.2.0, v1.3.0, v1.4.0 and v1.5.0 need no database
 changes: an older `cheats.db` just works — replace the binary, keep the
 database file.
 
@@ -257,7 +275,11 @@ sets the terminal tab title to `cheat-terminal`, and on exit your shell
 screen comes back. The layout adapts to the terminal size, from 60×20
 to 160×40 and beyond: on narrow screens the sidebar hides (the header
 shows the active category instead), on small screens the detail pane
-hides, and the footer always fits the width.
+hides, and the footer always fits the width. The detail pane takes
+about 45% of the width, while the results list always keeps at least
+30 columns. Tags and the level filter show as bright bracket labels
+(`[docker]`, `[● Essential]`) with no background fill, so they stay
+readable on any terminal.
 
 All colors are plain ANSI palette colors — no truecolor, no special
 fonts — so the browser looks the same on Windows Terminal, macOS

@@ -19,7 +19,7 @@ import (
 )
 
 // version is the release version, shown by --version.
-const version = "1.4.0"
+const version = "1.5.0"
 
 func main() {
 	os.Exit(run(os.Args[1:]))

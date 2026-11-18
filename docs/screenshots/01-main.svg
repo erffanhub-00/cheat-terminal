@@ -3,36 +3,35 @@
 <rect width="984" height="534" fill="#0f172a"/>
 <g font-family="DejaVu Sans Mono, Menlo, Consolas, 'Courier New', monospace" font-size="13">
 <text x="12.0" y="25.0" fill="#0000ff" font-weight="bold">cheat-terminal</text>
-<text x="124.0" y="25.0" fill="#c0c0c0"> v1.4.0</text>
+<text x="124.0" y="25.0" fill="#c0c0c0"> v1.5.0</text>
 <text x="180.0" y="25.0" fill="#e2e8f0">                                                                                       </text>
 <text x="876.0" y="25.0" fill="#c0c0c0">1392 entries</text>
-<text x="12.0" y="42.0" fill="#0000ff">╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮</text>
-<text x="12.0" y="59.0" fill="#0000ff">│</text>
+<text x="12.0" y="42.0" fill="#808080">╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮</text>
+<text x="12.0" y="59.0" fill="#808080">│</text>
 <text x="20.0" y="59.0" fill="#e2e8f0">❯ </text>
-<rect x="36.0" y="46.0" width="8.0" height="17.0" fill="#e2e8f0"/>
-<text x="36.0" y="59.0" fill="None">T</text>
+<text x="36.0" y="59.0" fill="#585858">T</text>
 <text x="44.0" y="59.0" fill="#585858">ype to search...</text>
 <text x="172.0" y="59.0" fill="#585858">                                                                                                </text>
 <text x="940.0" y="59.0" fill="#e2e8f0">   </text>
-<text x="964.0" y="59.0" fill="#0000ff">│</text>
-<text x="12.0" y="76.0" fill="#0000ff">╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</text>
+<text x="964.0" y="59.0" fill="#808080">│</text>
+<text x="12.0" y="76.0" fill="#808080">╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</text>
 <text x="12.0" y="93.0" fill="#808080">╭──────────────────────╮</text>
 <text x="204.0" y="93.0" fill="#e2e8f0"> </text>
 <text x="212.0" y="93.0" fill="#0000ff" font-weight="bold">&gt; </text>
-<text x="228.0" y="93.0" fill="#808080">●</text>
+<text x="228.0" y="93.0" fill="#c0c0c0">●</text>
 <text x="236.0" y="93.0" fill="#e2e8f0"> </text>
 <text x="244.0" y="93.0" fill="#0000ff" font-weight="bold">--secret in build</text>
-<text x="380.0" y="93.0" fill="#e2e8f0">                    </text>
-<text x="540.0" y="93.0" fill="#808080">╭────────────────────────────────────────╮</text>
+<text x="380.0" y="93.0" fill="#e2e8f0">                 </text>
+<text x="516.0" y="93.0" fill="#808080">╭────────────────────────────────────────────────────╮</text>
 <text x="12.0" y="110.0" fill="#808080">│</text>
 <text x="20.0" y="110.0" fill="#ffffff" font-weight="bold">Categories</text>
 <text x="100.0" y="110.0" fill="#e2e8f0">            </text>
 <text x="196.0" y="110.0" fill="#808080">│</text>
-<text x="204.0" y="110.0" fill="#e2e8f0">                                          </text>
-<text x="540.0" y="110.0" fill="#808080">│</text>
-<text x="548.0" y="110.0" fill="#ffffff" font-weight="bold">Details</text>
-<text x="604.0" y="110.0" fill="#e2e8f0">                                 </text>
-<text x="868.0" y="110.0" fill="#808080">│</text>
+<text x="204.0" y="110.0" fill="#e2e8f0">                                       </text>
+<text x="516.0" y="110.0" fill="#808080">│</text>
+<text x="524.0" y="110.0" fill="#ffffff" font-weight="bold">Details</text>
+<text x="580.0" y="110.0" fill="#e2e8f0">                                             </text>
+<text x="940.0" y="110.0" fill="#808080">│</text>
 <text x="12.0" y="127.0" fill="#808080">│</text>
 <text x="20.0" y="127.0" fill="#c0c0c0">──────────────────────</text>
 <text x="196.0" y="127.0" fill="#808080">│</text>
@@ -40,10 +39,10 @@
 <text x="228.0" y="127.0" fill="#ffff00">●</text>
 <text x="236.0" y="127.0" fill="#e2e8f0"> </text>
 <text x="244.0" y="127.0" fill="#ffffff" font-weight="bold">.dockerignore</text>
-<text x="348.0" y="127.0" fill="#e2e8f0">                        </text>
-<text x="540.0" y="127.0" fill="#808080">│</text>
-<text x="548.0" y="127.0" fill="#c0c0c0">────────────────────────────────────────</text>
-<text x="868.0" y="127.0" fill="#808080">│</text>
+<text x="348.0" y="127.0" fill="#e2e8f0">                     </text>
+<text x="516.0" y="127.0" fill="#808080">│</text>
+<text x="524.0" y="127.0" fill="#c0c0c0">────────────────────────────────────────────────────</text>
+<text x="940.0" y="127.0" fill="#808080">│</text>
 <text x="12.0" y="144.0" fill="#808080">│</text>
 <text x="20.0" y="144.0" fill="#e2e8f0">  </text>
 <text x="36.0" y="144.0" fill="#ffff00">●</text>
@@ -53,15 +52,13 @@
 <text x="164.0" y="144.0" fill="#c0c0c0">(0)</text>
 <text x="188.0" y="144.0" fill="#e2e8f0"> </text>
 <text x="196.0" y="144.0" fill="#808080">│</text>
-<text x="204.0" y="144.0" fill="#e2e8f0">                                          </text>
-<text x="540.0" y="144.0" fill="#808080">│</text>
-<rect x="548.0" y="131.0" width="64.0" height="17.0" fill="#00ffff"/>
-<text x="548.0" y="144.0" fill="#000000" font-weight="bold"> Docker </text>
-<text x="612.0" y="144.0" fill="#e2e8f0"> </text>
-<rect x="620.0" y="131.0" width="96.0" height="17.0" fill="#808080"/>
-<text x="620.0" y="144.0" fill="#000000" font-weight="bold"> ● Advanced </text>
-<text x="716.0" y="144.0" fill="#e2e8f0">                   </text>
-<text x="868.0" y="144.0" fill="#808080">│</text>
+<text x="204.0" y="144.0" fill="#e2e8f0">                                       </text>
+<text x="516.0" y="144.0" fill="#808080">│</text>
+<text x="524.0" y="144.0" fill="#00ffff" font-weight="bold">[Docker]</text>
+<text x="588.0" y="144.0" fill="#e2e8f0"> </text>
+<text x="596.0" y="144.0" fill="#c0c0c0" font-weight="bold">[● Advanced]</text>
+<text x="692.0" y="144.0" fill="#e2e8f0">                               </text>
+<text x="940.0" y="144.0" fill="#808080">│</text>
 <text x="12.0" y="161.0" fill="#808080">│</text>
 <text x="20.0" y="161.0" fill="#0000ff" font-weight="bold">&gt; </text>
 <text x="36.0" y="161.0" fill="#0000ff">●</text>
@@ -75,11 +72,11 @@
 <text x="228.0" y="161.0" fill="#ffff00">●</text>
 <text x="236.0" y="161.0" fill="#e2e8f0"> </text>
 <text x="244.0" y="161.0" fill="#ffffff" font-weight="bold">ADD file.tar.gz /app/</text>
-<text x="412.0" y="161.0" fill="#e2e8f0">                </text>
-<text x="540.0" y="161.0" fill="#808080">│</text>
-<text x="548.0" y="161.0" fill="#c0c0c0">Command:</text>
-<text x="612.0" y="161.0" fill="#e2e8f0">                                </text>
-<text x="868.0" y="161.0" fill="#808080">│</text>
+<text x="412.0" y="161.0" fill="#e2e8f0">             </text>
+<text x="516.0" y="161.0" fill="#808080">│</text>
+<text x="524.0" y="161.0" fill="#ffffff" font-weight="bold">Command:</text>
+<text x="588.0" y="161.0" fill="#e2e8f0">                                            </text>
+<text x="940.0" y="161.0" fill="#808080">│</text>
 <text x="12.0" y="178.0" fill="#808080">│</text>
 <text x="20.0" y="178.0" fill="#e2e8f0">  </text>
 <text x="36.0" y="178.0" fill="#00ffff">●</text>
@@ -89,11 +86,11 @@
 <text x="148.0" y="178.0" fill="#c0c0c0">(214)</text>
 <text x="188.0" y="178.0" fill="#e2e8f0"> </text>
 <text x="196.0" y="178.0" fill="#808080">│</text>
-<text x="204.0" y="178.0" fill="#e2e8f0">                                          </text>
-<text x="540.0" y="178.0" fill="#808080">│</text>
-<text x="548.0" y="178.0" fill="#ffffff" font-weight="bold">--secret in build</text>
-<text x="684.0" y="178.0" fill="#e2e8f0">                       </text>
-<text x="868.0" y="178.0" fill="#808080">│</text>
+<text x="204.0" y="178.0" fill="#e2e8f0">                                       </text>
+<text x="516.0" y="178.0" fill="#808080">│</text>
+<text x="524.0" y="178.0" fill="#ffffff" font-weight="bold">--secret in build</text>
+<text x="660.0" y="178.0" fill="#e2e8f0">                                   </text>
+<text x="940.0" y="178.0" fill="#808080">│</text>
 <text x="12.0" y="195.0" fill="#808080">│</text>
 <text x="20.0" y="195.0" fill="#e2e8f0">  </text>
 <text x="36.0" y="195.0" fill="#ff8700">●</text>
@@ -107,10 +104,10 @@
 <text x="228.0" y="195.0" fill="#ffff00">●</text>
 <text x="236.0" y="195.0" fill="#e2e8f0"> </text>
 <text x="244.0" y="195.0" fill="#ffffff" font-weight="bold">ARG VERSION=1.0</text>
-<text x="364.0" y="195.0" fill="#e2e8f0">                      </text>
-<text x="540.0" y="195.0" fill="#808080">│</text>
-<text x="548.0" y="195.0" fill="#e2e8f0">                                        </text>
-<text x="868.0" y="195.0" fill="#808080">│</text>
+<text x="364.0" y="195.0" fill="#e2e8f0">                   </text>
+<text x="516.0" y="195.0" fill="#808080">│</text>
+<text x="524.0" y="195.0" fill="#e2e8f0">                                                    </text>
+<text x="940.0" y="195.0" fill="#808080">│</text>
 <text x="12.0" y="212.0" fill="#808080">│</text>
 <text x="20.0" y="212.0" fill="#e2e8f0">  </text>
 <text x="36.0" y="212.0" fill="#0000ff">●</text>
@@ -120,11 +117,11 @@
 <text x="148.0" y="212.0" fill="#c0c0c0">(513)</text>
 <text x="188.0" y="212.0" fill="#e2e8f0"> </text>
 <text x="196.0" y="212.0" fill="#808080">│</text>
-<text x="204.0" y="212.0" fill="#e2e8f0">                                          </text>
-<text x="540.0" y="212.0" fill="#808080">│</text>
-<text x="548.0" y="212.0" fill="#c0c0c0">Description:</text>
-<text x="644.0" y="212.0" fill="#e2e8f0">                            </text>
-<text x="868.0" y="212.0" fill="#808080">│</text>
+<text x="204.0" y="212.0" fill="#e2e8f0">                                       </text>
+<text x="516.0" y="212.0" fill="#808080">│</text>
+<text x="524.0" y="212.0" fill="#ffffff" font-weight="bold">Description:</text>
+<text x="620.0" y="212.0" fill="#e2e8f0">                                        </text>
+<text x="940.0" y="212.0" fill="#808080">│</text>
 <text x="12.0" y="229.0" fill="#808080">│</text>
 <text x="20.0" y="229.0" fill="#e2e8f0">  </text>
 <text x="36.0" y="229.0" fill="#ff00ff">●</text>
@@ -138,17 +135,17 @@
 <text x="228.0" y="229.0" fill="#ffff00">●</text>
 <text x="236.0" y="229.0" fill="#e2e8f0"> </text>
 <text x="244.0" y="229.0" fill="#ffffff" font-weight="bold">Alpine base image</text>
-<text x="380.0" y="229.0" fill="#e2e8f0">                    </text>
-<text x="540.0" y="229.0" fill="#808080">│</text>
-<text x="548.0" y="229.0" fill="#e2e8f0">docker build --secret                   </text>
-<text x="868.0" y="229.0" fill="#808080">│</text>
+<text x="380.0" y="229.0" fill="#e2e8f0">                 </text>
+<text x="516.0" y="229.0" fill="#808080">│</text>
+<text x="524.0" y="229.0" fill="#e2e8f0">docker build --secret id=token,src=token.txt for    </text>
+<text x="940.0" y="229.0" fill="#808080">│</text>
 <text x="12.0" y="246.0" fill="#808080">│</text>
 <text x="20.0" y="246.0" fill="#e2e8f0">                      </text>
 <text x="196.0" y="246.0" fill="#808080">│</text>
-<text x="204.0" y="246.0" fill="#e2e8f0">                                          </text>
-<text x="540.0" y="246.0" fill="#808080">│</text>
-<text x="548.0" y="246.0" fill="#e2e8f0">id=token,src=token.txt for build-time   </text>
-<text x="868.0" y="246.0" fill="#808080">│</text>
+<text x="204.0" y="246.0" fill="#e2e8f0">                                       </text>
+<text x="516.0" y="246.0" fill="#808080">│</text>
+<text x="524.0" y="246.0" fill="#e2e8f0">build-time tokens                                   </text>
+<text x="940.0" y="246.0" fill="#808080">│</text>
 <text x="12.0" y="263.0" fill="#808080">│</text>
 <text x="20.0" y="263.0" fill="#e2e8f0">                      </text>
 <text x="196.0" y="263.0" fill="#808080">│</text>
@@ -156,17 +153,18 @@
 <text x="228.0" y="263.0" fill="#ffff00">●</text>
 <text x="236.0" y="263.0" fill="#e2e8f0"> </text>
 <text x="244.0" y="263.0" fill="#ffffff" font-weight="bold">CMD ["node", "app.js"]</text>
-<text x="420.0" y="263.0" fill="#e2e8f0">               </text>
-<text x="540.0" y="263.0" fill="#808080">│</text>
-<text x="548.0" y="263.0" fill="#e2e8f0">tokens                                  </text>
-<text x="868.0" y="263.0" fill="#808080">│</text>
+<text x="420.0" y="263.0" fill="#e2e8f0">            </text>
+<text x="516.0" y="263.0" fill="#808080">│</text>
+<text x="524.0" y="263.0" fill="#e2e8f0">                                                    </text>
+<text x="940.0" y="263.0" fill="#808080">│</text>
 <text x="12.0" y="280.0" fill="#808080">│</text>
 <text x="20.0" y="280.0" fill="#e2e8f0">                      </text>
 <text x="196.0" y="280.0" fill="#808080">│</text>
-<text x="204.0" y="280.0" fill="#e2e8f0">                                          </text>
-<text x="540.0" y="280.0" fill="#808080">│</text>
-<text x="548.0" y="280.0" fill="#e2e8f0">                                        </text>
-<text x="868.0" y="280.0" fill="#808080">│</text>
+<text x="204.0" y="280.0" fill="#e2e8f0">                                       </text>
+<text x="516.0" y="280.0" fill="#808080">│</text>
+<text x="524.0" y="280.0" fill="#ffffff" font-weight="bold">Tags:</text>
+<text x="564.0" y="280.0" fill="#e2e8f0">                                               </text>
+<text x="940.0" y="280.0" fill="#808080">│</text>
 <text x="12.0" y="297.0" fill="#808080">│</text>
 <text x="20.0" y="297.0" fill="#e2e8f0">                      </text>
 <text x="196.0" y="297.0" fill="#808080">│</text>
@@ -174,42 +172,39 @@
 <text x="228.0" y="297.0" fill="#ffff00">●</text>
 <text x="236.0" y="297.0" fill="#e2e8f0"> </text>
 <text x="244.0" y="297.0" fill="#ffffff" font-weight="bold">COPY --chown=node:node</text>
-<text x="420.0" y="297.0" fill="#e2e8f0">               </text>
-<text x="540.0" y="297.0" fill="#808080">│</text>
-<text x="548.0" y="297.0" fill="#c0c0c0">Tags:</text>
-<text x="588.0" y="297.0" fill="#e2e8f0">                                   </text>
-<text x="868.0" y="297.0" fill="#808080">│</text>
+<text x="420.0" y="297.0" fill="#e2e8f0">            </text>
+<text x="516.0" y="297.0" fill="#808080">│</text>
+<text x="524.0" y="297.0" fill="#00ff00" font-weight="bold">[docker]</text>
+<text x="588.0" y="297.0" fill="#e2e8f0"> </text>
+<text x="596.0" y="297.0" fill="#ff00ff" font-weight="bold">[security]</text>
+<text x="676.0" y="297.0" fill="#e2e8f0">                                 </text>
+<text x="940.0" y="297.0" fill="#808080">│</text>
 <text x="12.0" y="314.0" fill="#808080">│</text>
 <text x="20.0" y="314.0" fill="#e2e8f0">                      </text>
 <text x="196.0" y="314.0" fill="#808080">│</text>
-<text x="204.0" y="314.0" fill="#e2e8f0">                                          </text>
-<text x="540.0" y="314.0" fill="#808080">│</text>
-<rect x="548.0" y="301.0" width="64.0" height="17.0" fill="#008000"/>
-<text x="548.0" y="314.0" fill="#000000" font-weight="bold"> docker </text>
-<text x="612.0" y="314.0" fill="#e2e8f0"> </text>
-<rect x="620.0" y="301.0" width="80.0" height="17.0" fill="#ff00ff"/>
-<text x="620.0" y="314.0" fill="#000000" font-weight="bold"> security </text>
-<text x="700.0" y="314.0" fill="#e2e8f0">                     </text>
-<text x="868.0" y="314.0" fill="#808080">│</text>
+<text x="204.0" y="314.0" fill="#e2e8f0">                                       </text>
+<text x="516.0" y="314.0" fill="#808080">│</text>
+<text x="524.0" y="314.0" fill="#e2e8f0">                                                    </text>
+<text x="940.0" y="314.0" fill="#808080">│</text>
 <text x="12.0" y="331.0" fill="#808080">│</text>
 <text x="20.0" y="331.0" fill="#e2e8f0">                      </text>
 <text x="196.0" y="331.0" fill="#808080">│</text>
 <text x="204.0" y="331.0" fill="#e2e8f0">   </text>
 <text x="228.0" y="331.0" fill="#ffff00">●</text>
 <text x="236.0" y="331.0" fill="#e2e8f0"> </text>
-<text x="244.0" y="331.0" fill="#ffffff" font-weight="bold">COPY --from=builder /app/dist ./dist</text>
-<text x="532.0" y="331.0" fill="#e2e8f0"> </text>
-<text x="540.0" y="331.0" fill="#808080">│</text>
-<text x="548.0" y="331.0" fill="#e2e8f0">                                        </text>
-<text x="868.0" y="331.0" fill="#808080">│</text>
+<text x="244.0" y="331.0" fill="#ffffff" font-weight="bold">COPY --from=builder /app/dist ./…</text>
+<text x="508.0" y="331.0" fill="#e2e8f0"> </text>
+<text x="516.0" y="331.0" fill="#808080">│</text>
+<text x="524.0" y="331.0" fill="#c0c0c0">#1101 · seed</text>
+<text x="620.0" y="331.0" fill="#e2e8f0">                                        </text>
+<text x="940.0" y="331.0" fill="#808080">│</text>
 <text x="12.0" y="348.0" fill="#808080">│</text>
 <text x="20.0" y="348.0" fill="#e2e8f0">                      </text>
 <text x="196.0" y="348.0" fill="#808080">│</text>
-<text x="204.0" y="348.0" fill="#e2e8f0">                                          </text>
-<text x="540.0" y="348.0" fill="#808080">│</text>
-<text x="548.0" y="348.0" fill="#c0c0c0">#1101 · seed</text>
-<text x="644.0" y="348.0" fill="#e2e8f0">                            </text>
-<text x="868.0" y="348.0" fill="#808080">│</text>
+<text x="204.0" y="348.0" fill="#e2e8f0">                                       </text>
+<text x="516.0" y="348.0" fill="#808080">│</text>
+<text x="524.0" y="348.0" fill="#e2e8f0">                                                    </text>
+<text x="940.0" y="348.0" fill="#808080">│</text>
 <text x="12.0" y="365.0" fill="#808080">│</text>
 <text x="20.0" y="365.0" fill="#e2e8f0">                      </text>
 <text x="196.0" y="365.0" fill="#808080">│</text>
@@ -217,17 +212,18 @@
 <text x="228.0" y="365.0" fill="#ffff00">●</text>
 <text x="236.0" y="365.0" fill="#e2e8f0"> </text>
 <text x="244.0" y="365.0" fill="#ffffff" font-weight="bold">COPY . .</text>
-<text x="308.0" y="365.0" fill="#e2e8f0">                             </text>
-<text x="540.0" y="365.0" fill="#808080">│</text>
-<text x="548.0" y="365.0" fill="#e2e8f0">                                        </text>
-<text x="868.0" y="365.0" fill="#808080">│</text>
+<text x="308.0" y="365.0" fill="#e2e8f0">                          </text>
+<text x="516.0" y="365.0" fill="#808080">│</text>
+<text x="524.0" y="365.0" fill="#c0c0c0">[Enter] Copy   [s] Favorite   [a] Add   [d] Delete</text>
+<text x="924.0" y="365.0" fill="#e2e8f0">  </text>
+<text x="940.0" y="365.0" fill="#808080">│</text>
 <text x="12.0" y="382.0" fill="#808080">│</text>
 <text x="20.0" y="382.0" fill="#e2e8f0">                      </text>
 <text x="196.0" y="382.0" fill="#808080">│</text>
-<text x="204.0" y="382.0" fill="#e2e8f0">                                          </text>
-<text x="540.0" y="382.0" fill="#808080">│</text>
-<text x="548.0" y="382.0" fill="#c0c0c0">[Enter] Copy   [s] Favorite   [a] Add  …</text>
-<text x="868.0" y="382.0" fill="#808080">│</text>
+<text x="204.0" y="382.0" fill="#e2e8f0">                                       </text>
+<text x="516.0" y="382.0" fill="#808080">│</text>
+<text x="524.0" y="382.0" fill="#e2e8f0">                                                    </text>
+<text x="940.0" y="382.0" fill="#808080">│</text>
 <text x="12.0" y="399.0" fill="#808080">│</text>
 <text x="20.0" y="399.0" fill="#e2e8f0">                      </text>
 <text x="196.0" y="399.0" fill="#808080">│</text>
@@ -235,17 +231,17 @@
 <text x="228.0" y="399.0" fill="#ffff00">●</text>
 <text x="236.0" y="399.0" fill="#e2e8f0"> </text>
 <text x="244.0" y="399.0" fill="#ffffff" font-weight="bold">COPY instead of ADD</text>
-<text x="396.0" y="399.0" fill="#e2e8f0">                  </text>
-<text x="540.0" y="399.0" fill="#808080">│</text>
-<text x="548.0" y="399.0" fill="#e2e8f0">                                        </text>
-<text x="868.0" y="399.0" fill="#808080">│</text>
+<text x="396.0" y="399.0" fill="#e2e8f0">               </text>
+<text x="516.0" y="399.0" fill="#808080">│</text>
+<text x="524.0" y="399.0" fill="#e2e8f0">                                                    </text>
+<text x="940.0" y="399.0" fill="#808080">│</text>
 <text x="12.0" y="416.0" fill="#808080">│</text>
 <text x="20.0" y="416.0" fill="#e2e8f0">                      </text>
 <text x="196.0" y="416.0" fill="#808080">│</text>
-<text x="204.0" y="416.0" fill="#e2e8f0">                                          </text>
-<text x="540.0" y="416.0" fill="#808080">│</text>
-<text x="548.0" y="416.0" fill="#e2e8f0">                                        </text>
-<text x="868.0" y="416.0" fill="#808080">│</text>
+<text x="204.0" y="416.0" fill="#e2e8f0">                                       </text>
+<text x="516.0" y="416.0" fill="#808080">│</text>
+<text x="524.0" y="416.0" fill="#e2e8f0">                                                    </text>
+<text x="940.0" y="416.0" fill="#808080">│</text>
 <text x="12.0" y="433.0" fill="#808080">│</text>
 <text x="20.0" y="433.0" fill="#e2e8f0">                      </text>
 <text x="196.0" y="433.0" fill="#808080">│</text>
@@ -253,74 +249,74 @@
 <text x="228.0" y="433.0" fill="#ffff00">●</text>
 <text x="236.0" y="433.0" fill="#e2e8f0"> </text>
 <text x="244.0" y="433.0" fill="#ffffff" font-weight="bold">Cannot connect to another service</text>
-<text x="508.0" y="433.0" fill="#e2e8f0">    </text>
-<text x="540.0" y="433.0" fill="#808080">│</text>
-<text x="548.0" y="433.0" fill="#e2e8f0">                                        </text>
-<text x="868.0" y="433.0" fill="#808080">│</text>
+<text x="508.0" y="433.0" fill="#e2e8f0"> </text>
+<text x="516.0" y="433.0" fill="#808080">│</text>
+<text x="524.0" y="433.0" fill="#e2e8f0">                                                    </text>
+<text x="940.0" y="433.0" fill="#808080">│</text>
 <text x="12.0" y="450.0" fill="#808080">│</text>
 <text x="20.0" y="450.0" fill="#e2e8f0">                      </text>
 <text x="196.0" y="450.0" fill="#808080">│</text>
-<text x="204.0" y="450.0" fill="#e2e8f0">                                          </text>
-<text x="540.0" y="450.0" fill="#808080">│</text>
-<text x="548.0" y="450.0" fill="#e2e8f0">                                        </text>
-<text x="868.0" y="450.0" fill="#808080">│</text>
+<text x="204.0" y="450.0" fill="#e2e8f0">                                       </text>
+<text x="516.0" y="450.0" fill="#808080">│</text>
+<text x="524.0" y="450.0" fill="#e2e8f0">                                                    </text>
+<text x="940.0" y="450.0" fill="#808080">│</text>
 <text x="12.0" y="467.0" fill="#808080">│</text>
 <text x="20.0" y="467.0" fill="#e2e8f0">                      </text>
 <text x="196.0" y="467.0" fill="#808080">│</text>
 <text x="204.0" y="467.0" fill="#e2e8f0">   </text>
-<text x="228.0" y="467.0" fill="#808080">●</text>
+<text x="228.0" y="467.0" fill="#c0c0c0">●</text>
 <text x="236.0" y="467.0" fill="#e2e8f0"> </text>
 <text x="244.0" y="467.0" fill="#ffffff" font-weight="bold">Clean the cache in the same layer</text>
-<text x="508.0" y="467.0" fill="#e2e8f0">    </text>
-<text x="540.0" y="467.0" fill="#808080">│</text>
-<text x="548.0" y="467.0" fill="#e2e8f0">                                        </text>
-<text x="868.0" y="467.0" fill="#808080">│</text>
+<text x="508.0" y="467.0" fill="#e2e8f0"> </text>
+<text x="516.0" y="467.0" fill="#808080">│</text>
+<text x="524.0" y="467.0" fill="#e2e8f0">                                                    </text>
+<text x="940.0" y="467.0" fill="#808080">│</text>
 <text x="12.0" y="484.0" fill="#808080">╰──────────────────────╯</text>
-<text x="204.0" y="484.0" fill="#e2e8f0">                                          </text>
-<text x="540.0" y="484.0" fill="#808080">╰────────────────────────────────────────╯</text>
-<text x="12.0" y="501.0" fill="#0000ff" font-weight="bold">Esc</text>
-<text x="36.0" y="501.0" fill="#e2e8f0"> </text>
-<text x="44.0" y="501.0" fill="#c0c0c0">once → keys</text>
-<text x="132.0" y="501.0" fill="#c0c0c0"> · </text>
-<text x="156.0" y="501.0" fill="#0000ff" font-weight="bold">⏎</text>
-<text x="164.0" y="501.0" fill="#e2e8f0"> </text>
-<text x="172.0" y="501.0" fill="#c0c0c0">copy</text>
-<text x="204.0" y="501.0" fill="#c0c0c0"> · </text>
-<text x="228.0" y="501.0" fill="#0000ff" font-weight="bold">Esc</text>
-<text x="252.0" y="501.0" fill="#e2e8f0"> </text>
-<text x="260.0" y="501.0" fill="#c0c0c0">list</text>
-<text x="292.0" y="501.0" fill="#c0c0c0"> · </text>
-<text x="316.0" y="501.0" fill="#0000ff" font-weight="bold">f</text>
-<text x="324.0" y="501.0" fill="#e2e8f0"> </text>
-<text x="332.0" y="501.0" fill="#c0c0c0">filter</text>
-<text x="380.0" y="501.0" fill="#c0c0c0"> · </text>
-<text x="404.0" y="501.0" fill="#0000ff" font-weight="bold">s</text>
-<text x="412.0" y="501.0" fill="#e2e8f0"> </text>
-<text x="420.0" y="501.0" fill="#c0c0c0">fav</text>
-<text x="444.0" y="501.0" fill="#c0c0c0"> · </text>
-<text x="468.0" y="501.0" fill="#0000ff" font-weight="bold">a</text>
-<text x="476.0" y="501.0" fill="#e2e8f0"> </text>
-<text x="484.0" y="501.0" fill="#c0c0c0">add</text>
-<text x="508.0" y="501.0" fill="#c0c0c0"> · </text>
-<text x="532.0" y="501.0" fill="#0000ff" font-weight="bold">C</text>
-<text x="540.0" y="501.0" fill="#e2e8f0"> </text>
-<text x="548.0" y="501.0" fill="#c0c0c0">cat</text>
-<text x="572.0" y="501.0" fill="#c0c0c0"> · </text>
-<text x="596.0" y="501.0" fill="#0000ff" font-weight="bold">d</text>
-<text x="604.0" y="501.0" fill="#e2e8f0"> </text>
-<text x="612.0" y="501.0" fill="#c0c0c0">del</text>
-<text x="636.0" y="501.0" fill="#c0c0c0"> · </text>
-<text x="660.0" y="501.0" fill="#0000ff" font-weight="bold">E</text>
-<text x="668.0" y="501.0" fill="#e2e8f0"> </text>
-<text x="676.0" y="501.0" fill="#c0c0c0">exp</text>
-<text x="700.0" y="501.0" fill="#c0c0c0"> · </text>
-<text x="724.0" y="501.0" fill="#0000ff" font-weight="bold">I</text>
-<text x="732.0" y="501.0" fill="#e2e8f0"> </text>
-<text x="740.0" y="501.0" fill="#c0c0c0">imp</text>
-<text x="764.0" y="501.0" fill="#c0c0c0"> · </text>
-<text x="788.0" y="501.0" fill="#0000ff" font-weight="bold">?</text>
-<text x="796.0" y="501.0" fill="#e2e8f0"> </text>
-<text x="804.0" y="501.0" fill="#c0c0c0">help</text>
+<text x="204.0" y="484.0" fill="#e2e8f0">                                       </text>
+<text x="516.0" y="484.0" fill="#808080">╰────────────────────────────────────────────────────╯</text>
+<text x="12.0" y="501.0" fill="#0000ff" font-weight="bold">Enter</text>
+<text x="52.0" y="501.0" fill="#e2e8f0"> </text>
+<text x="60.0" y="501.0" fill="#c0c0c0">copy</text>
+<text x="92.0" y="501.0" fill="#c0c0c0"> · </text>
+<text x="116.0" y="501.0" fill="#0000ff" font-weight="bold">/</text>
+<text x="124.0" y="501.0" fill="#e2e8f0"> </text>
+<text x="132.0" y="501.0" fill="#c0c0c0">search</text>
+<text x="180.0" y="501.0" fill="#c0c0c0"> · </text>
+<text x="204.0" y="501.0" fill="#0000ff" font-weight="bold">f</text>
+<text x="212.0" y="501.0" fill="#e2e8f0"> </text>
+<text x="220.0" y="501.0" fill="#c0c0c0">filter</text>
+<text x="268.0" y="501.0" fill="#c0c0c0"> · </text>
+<text x="292.0" y="501.0" fill="#0000ff" font-weight="bold">s</text>
+<text x="300.0" y="501.0" fill="#e2e8f0"> </text>
+<text x="308.0" y="501.0" fill="#c0c0c0">favorite</text>
+<text x="372.0" y="501.0" fill="#c0c0c0"> · </text>
+<text x="396.0" y="501.0" fill="#0000ff" font-weight="bold">a</text>
+<text x="404.0" y="501.0" fill="#e2e8f0"> </text>
+<text x="412.0" y="501.0" fill="#c0c0c0">add</text>
+<text x="436.0" y="501.0" fill="#c0c0c0"> · </text>
+<text x="460.0" y="501.0" fill="#0000ff" font-weight="bold">C</text>
+<text x="468.0" y="501.0" fill="#e2e8f0"> </text>
+<text x="476.0" y="501.0" fill="#c0c0c0">category</text>
+<text x="540.0" y="501.0" fill="#c0c0c0"> · </text>
+<text x="564.0" y="501.0" fill="#0000ff" font-weight="bold">d</text>
+<text x="572.0" y="501.0" fill="#e2e8f0"> </text>
+<text x="580.0" y="501.0" fill="#c0c0c0">delete</text>
+<text x="628.0" y="501.0" fill="#c0c0c0"> · </text>
+<text x="652.0" y="501.0" fill="#0000ff" font-weight="bold">E</text>
+<text x="660.0" y="501.0" fill="#e2e8f0"> </text>
+<text x="668.0" y="501.0" fill="#c0c0c0">export</text>
+<text x="716.0" y="501.0" fill="#c0c0c0"> · </text>
+<text x="740.0" y="501.0" fill="#0000ff" font-weight="bold">I</text>
+<text x="748.0" y="501.0" fill="#e2e8f0"> </text>
+<text x="756.0" y="501.0" fill="#c0c0c0">import</text>
+<text x="804.0" y="501.0" fill="#c0c0c0"> · </text>
+<text x="828.0" y="501.0" fill="#0000ff" font-weight="bold">?</text>
+<text x="836.0" y="501.0" fill="#e2e8f0"> </text>
+<text x="844.0" y="501.0" fill="#c0c0c0">help</text>
+<text x="876.0" y="501.0" fill="#c0c0c0"> · </text>
+<text x="900.0" y="501.0" fill="#0000ff" font-weight="bold">q</text>
+<text x="908.0" y="501.0" fill="#e2e8f0"> </text>
+<text x="916.0" y="501.0" fill="#c0c0c0">quit</text>
 <text x="12.0" y="518.0" fill="#c0c0c0">1000 entries · All</text>
 </g>
 </svg>
