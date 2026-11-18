@@ -227,8 +227,303 @@ func TestTUIEscClearsQuery(t *testing.T) {
 	}
 }
 
-// TestTUIViewFitsTerminal guards the layout: the view must never be taller
-// than the terminal, or the header and search box scroll off the top.
+// typeText types every rune of s into the model, one key message each.
+func typeText(m Model, s string) Model {
+	for _, ch := range s {
+		m = update(m, keyMsg(string(ch)))
+	}
+	return m
+}
+
+func TestTUIAddEntryFlow(t *testing.T) {
+	s := openSeededStore(t)
+	m := New(s, "test")
+	m = toList(m)
+	// 'a' opens the add-entry form at step 1 (Command).
+	m = update(m, keyMsg("a"))
+	if m.prompt != promptAdd || m.addStep != 0 {
+		t.Fatalf("a did not open the add form: prompt %d step %d", m.prompt, m.addStep)
+	}
+	if !strings.Contains(m.View(), "Add entry") {
+		t.Fatalf("add form view missing")
+	}
+	// Empty command: Enter cancels without saving.
+	m = update(m, keyMsg("enter"))
+	if m.prompt != promptNone {
+		t.Fatalf("empty command did not cancel the form")
+	}
+	if !strings.Contains(m.status, "Command is empty") {
+		t.Fatalf("empty command status = %q, want 'Command is empty'", m.status)
+	}
+	if n, _ := s.CountEntries(); n != 1392 {
+		t.Fatalf("empty command added an entry: total %d", n)
+	}
+	// Full flow: command, description, NEW category, tags, level 1.
+	m = update(m, keyMsg("a"))
+	m = typeText(m, "my test cmd")
+	m = update(m, keyMsg("enter"))
+	if m.addStep != 1 {
+		t.Fatalf("after command, step = %d, want 1", m.addStep)
+	}
+	m = typeText(m, "a command I added myself")
+	m = update(m, keyMsg("enter"))
+	if m.addStep != 2 {
+		t.Fatalf("after description, step = %d, want 2", m.addStep)
+	}
+	if !strings.Contains(m.View(), "Existing:") {
+		t.Fatalf("category step does not list existing categories")
+	}
+	m = typeText(m, "kubernetes")
+	m = update(m, keyMsg("enter"))
+	if m.addStep != 3 {
+		t.Fatalf("after category, step = %d, want 3", m.addStep)
+	}
+	m = typeText(m, "test, demo")
+	m = update(m, keyMsg("enter"))
+	if m.addStep != 4 {
+		t.Fatalf("after tags, step = %d, want 4", m.addStep)
+	}
+	// A bad level stays on the step with an inline error.
+	m = typeText(m, "bogus")
+	m = update(m, keyMsg("enter"))
+	if m.prompt != promptAdd || m.addStep != 4 {
+		t.Fatalf("bad level left the form: prompt %d step %d", m.prompt, m.addStep)
+	}
+	if m.addErr == "" {
+		t.Fatalf("bad level did not set an inline error")
+	}
+	m = update(m, keyMsg("enter")) // empty now? No: input still has "bogus".
+	if m.prompt != promptAdd {
+		t.Fatalf("bad level was accepted on retry")
+	}
+	// Clear the bad value and enter a valid level.
+	for i := 0; i < len("bogus"); i++ {
+		m = update(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	m = typeText(m, "1")
+	m = update(m, keyMsg("enter"))
+	if m.prompt != promptNone {
+		t.Fatalf("form did not close after save")
+	}
+	if !strings.Contains(m.status, "Added to Kubernetes") {
+		t.Fatalf("save status = %q, want 'Added to Kubernetes'", m.status)
+	}
+	// The row exists in the database, in the new category, at level 1.
+	found, err := s.Search("my test cmd", "", 0, 0)
+	if err != nil || len(found) != 1 {
+		t.Fatalf("saved entry not found in db: %v (%d)", err, len(found))
+	}
+	if found[0].Category != "kubernetes" || found[0].Level != db.LevelEssential {
+		t.Fatalf("saved entry wrong: %+v", found[0])
+	}
+	if found[0].Source != "user" {
+		t.Fatalf("saved entry source = %q, want user", found[0].Source)
+	}
+	cats, _ := s.ListCategories()
+	var kc *db.Category
+	for i := range cats {
+		if cats[i].Name == "kubernetes" {
+			kc = &cats[i]
+		}
+	}
+	if kc == nil || kc.Count != 1 {
+		t.Fatalf("kubernetes category missing or wrong count: %+v", kc)
+	}
+	// The model shows the new category, with the new entry selected.
+	if m.activeCategoryName() != "kubernetes" {
+		t.Fatalf("after save, category = %q, want kubernetes", m.activeCategoryName())
+	}
+	if e, ok := m.selected(); !ok || e.Command != "my test cmd" {
+		t.Fatalf("after save, selected = %+v", e)
+	}
+	// A second entry with an empty level defaults to Common (2).
+	m = update(m, keyMsg("a"))
+	m = typeText(m, "my second cmd")
+	m = update(m, keyMsg("enter"))
+	m = update(m, keyMsg("enter")) // empty description
+	m = typeText(m, "docker")
+	m = update(m, keyMsg("enter"))
+	m = update(m, keyMsg("enter")) // empty tags
+	m = update(m, keyMsg("enter")) // empty level -> Common
+	if m.prompt != promptNone {
+		t.Fatalf("second form did not close after save")
+	}
+	found, _ = s.Search("my second cmd", "", 0, 0)
+	if len(found) != 1 || found[0].Level != db.LevelCommon {
+		t.Fatalf("empty level did not default to Common: %+v", found)
+	}
+	// The new entry is selected in the model, even though it sorts
+	// late in a big category (Docker has 214 entries): the result
+	// limit must not cut it off.
+	if m.activeCategoryName() != "docker" {
+		t.Fatalf("after second save, category = %q, want docker", m.activeCategoryName())
+	}
+	if e, ok := m.selected(); !ok || e.Command != "my second cmd" {
+		t.Fatalf("after second save, selected = %+v", e)
+	}
+	// Esc cancels the form at any step without saving.
+	m = update(m, keyMsg("a"))
+	m = typeText(m, "will not save")
+	m = update(m, keyMsg("esc"))
+	if m.prompt != promptNone {
+		t.Fatalf("Esc did not cancel the add form")
+	}
+	if n, _ := s.CountEntries(); n != 1394 {
+		t.Fatalf("cancelled add changed the total: %d", n)
+	}
+}
+
+func TestTUIAddCategoryFlow(t *testing.T) {
+	s := openSeededStore(t)
+	m := New(s, "test")
+	m = toList(m)
+	// 'C' opens the category prompt; a new name creates the category
+	// and selects it in the sidebar.
+	m = update(m, keyMsg("C"))
+	if m.prompt != promptCategory {
+		t.Fatalf("C did not open the category prompt: %d", m.prompt)
+	}
+	m = typeText(m, "kubernetes")
+	m = update(m, keyMsg("enter"))
+	if m.prompt != promptNone {
+		t.Fatalf("category prompt did not close after save")
+	}
+	if !strings.Contains(m.status, "Added category Kubernetes") {
+		t.Fatalf("category status = %q", m.status)
+	}
+	cats, _ := s.ListCategories()
+	found := false
+	for _, c := range cats {
+		if c.Name == "kubernetes" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("kubernetes not in categories after add")
+	}
+	if m.activeCategoryName() != "kubernetes" {
+		t.Fatalf("after add, sidebar = %q, want kubernetes", m.activeCategoryName())
+	}
+	// The same name again (case-insensitive) reports a duplicate.
+	m = update(m, keyMsg("C"))
+	m = typeText(m, "Kubernetes")
+	m = update(m, keyMsg("enter"))
+	if !strings.Contains(m.status, "Category already exists") {
+		t.Fatalf("duplicate status = %q, want 'Category already exists'", m.status)
+	}
+	// A built-in category is a duplicate too.
+	m = update(m, keyMsg("C"))
+	m = typeText(m, "docker")
+	m = update(m, keyMsg("enter"))
+	if !strings.Contains(m.status, "Category already exists") {
+		t.Fatalf("docker duplicate status = %q", m.status)
+	}
+}
+
+func TestTUIDeleteFlow(t *testing.T) {
+	s := openSeededStore(t)
+	m := New(s, "test")
+	m = toList(m)
+	e, ok := m.selected()
+	if !ok {
+		t.Fatalf("no selection")
+	}
+	// 'd' asks for confirmation.
+	m = update(m, keyMsg("d"))
+	if m.prompt != promptDelete {
+		t.Fatalf("d did not open the delete confirm: %d", m.prompt)
+	}
+	if !strings.Contains(m.View(), "Delete this entry?") {
+		t.Fatalf("delete confirm view missing")
+	}
+	// 'n' cancels: the entry stays.
+	m = update(m, keyMsg("n"))
+	if m.prompt != promptNone {
+		t.Fatalf("n did not cancel the delete")
+	}
+	if _, err := s.GetEntry(e.ID); err != nil {
+		t.Fatalf("entry gone after n: %v", err)
+	}
+	// Esc cancels too.
+	m = update(m, keyMsg("d"))
+	m = update(m, keyMsg("esc"))
+	if m.prompt != promptNone {
+		t.Fatalf("Esc did not cancel the delete")
+	}
+	if _, err := s.GetEntry(e.ID); err != nil {
+		t.Fatalf("entry gone after Esc: %v", err)
+	}
+	// 'y' deletes it.
+	m = update(m, keyMsg("d"))
+	m = update(m, keyMsg("y"))
+	if m.prompt != promptNone {
+		t.Fatalf("delete confirm did not close after y")
+	}
+	if !strings.Contains(m.status, "Deleted") {
+		t.Fatalf("delete status = %q", m.status)
+	}
+	if _, err := s.GetEntry(e.ID); err == nil {
+		t.Fatalf("entry still in db after y")
+	}
+	if n, _ := s.CountEntries(); n != 1391 {
+		t.Fatalf("total after delete = %d, want 1391", n)
+	}
+}
+
+// firstRunes returns the first n runes of s.
+func firstRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
+}
+
+func TestTUITwoLineRows(t *testing.T) {
+	m := New(openSeededStore(t), "test")
+	// Two-line rows take 3 lines each, so fewer rows fit per page.
+	m = update(m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	if v := m.visibleRows(); v != 8 {
+		t.Fatalf("visible rows at 120x30 = %d, want 8", v)
+	}
+	m = update(m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	if v := m.visibleRows(); v != 6 {
+		t.Fatalf("visible rows at 80x24 = %d, want 6", v)
+	}
+	// Check the list column itself (the full view joins the sidebar
+	// next to it, so its lines are never blank).
+	_, _, listW := m.layout()
+	lines := strings.Split(m.viewList(listW, m.bodyHeight()), "\n")
+	// Find a visible entry with a description and check its command and
+	// description sit on two adjacent lines, with a blank line after.
+	checked := false
+	for i := 0; i < m.visibleRows() && i < len(m.results); i++ {
+		e := m.results[i]
+		if strings.TrimSpace(e.Description) == "" {
+			continue
+		}
+		// Scan for the command line whose next line holds the description.
+		cmdIdx := -1
+		for j := 0; j+1 < len(lines); j++ {
+			if strings.Contains(lines[j], e.Command) &&
+				strings.Contains(lines[j+1], firstRunes(e.Description, 20)) {
+				cmdIdx = j
+				break
+			}
+		}
+		if cmdIdx < 0 {
+			t.Fatalf("no two-line row found for %q", e.Command)
+		}
+		if cmdIdx+2 >= len(lines) || lines[cmdIdx+2] != "" {
+			t.Fatalf("no blank line after the row: %q", lines[cmdIdx+2])
+		}
+		checked = true
+		break
+	}
+	if !checked {
+		t.Fatalf("no visible entry with a description to check")
+	}
+}
 func TestTUIViewFitsTerminal(t *testing.T) {
 	m := New(openSeededStore(t), "test")
 	m = update(m, tea.WindowSizeMsg{Width: 120, Height: 30})

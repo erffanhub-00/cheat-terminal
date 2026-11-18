@@ -7,12 +7,15 @@ browser, and a small CLI for searching and editing.
 - **1392 commands** seeded from day one: Linux, PowerShell, Docker, Git
 - **Live search** with full-text suggestions as you type
 - **A real browser**: category sidebar, live results, and a detail pane
-  showing the selected command in full
+  showing the selected command in full — two-line rows with room to
+  breathe, and every category in its own color
 - **Copy** any command to the clipboard with one key (Enter)
 - **Filter by usefulness**: Essential, Common or Advanced — every command
   is rated, so you can see only the ones that matter
 - **Favorites**: star the commands you use most, find them in one place
-- **Your own entries**: add, edit and delete; seed updates never touch them
+- **Your own entries**: add them inside the browser with `a` (step by
+  step), make your own categories with `C`, delete with `d`; edit and
+  delete from the CLI too. Seed updates never touch them
 - **One static binary, one database file** (`cheats.db`), no install, no network
 
 ## Install
@@ -44,6 +47,9 @@ Keys:
 - Esc switches to list mode (press again to go back to search)
 - In list mode: `c` copy, `s` star/unstar a favorite,
   `f` filter by usefulness (All → Essential → Common → Advanced),
+  `a` add a new entry (Command → Description → Category → Tags → Level;
+  typing a new category name creates it),
+  `C` add a new category, `d` delete the selected entry (asks first),
   `/` back to search, `q` quit
 - `?` shows all shortcuts, Ctrl+C quits
 
@@ -74,7 +80,8 @@ data: 1392 entries in 4 categories. Change the location with
 
 Databases created by v1.0.0 upgrade themselves on the first v1.1.0 run:
 new columns are added and the seed levels are filled in. Your own entries
-and favorites are kept.
+and favorites are kept. v1.2.0 needs no database changes: a v1.1.0
+`cheats.db` just works, and your entries and categories are kept.
 
 ## Seed data
 

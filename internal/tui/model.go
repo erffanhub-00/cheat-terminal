@@ -9,7 +9,10 @@
 //	  category, Enter copy, Esc clear/switch to list, ? help, Ctrl+C quit.
 //	List mode (Esc from search): Up/Down or j/k move, Enter/c copy,
 //	  s star or unstar a favorite, f filter by usefulness level,
+//	  a add an entry, C add a category, d delete an entry,
 //	  / back to search, q quit.
+//	Prompts (add entry, add category, delete): Enter confirms each step,
+//	  Esc cancels, y/n answers the delete question.
 package tui
 
 import (
@@ -46,13 +49,39 @@ type sideItem struct {
 	count int
 }
 
+// promptKind is the overlay prompt currently open, if any. Only one
+// prompt can be open at a time; while one is open it owns the keyboard.
+type promptKind int
+
+const (
+	promptNone     promptKind = iota
+	promptAdd                 // sequential add-entry form, one field per step
+	promptCategory            // single-field add-category prompt
+	promptDelete              // y/n delete confirmation
+)
+
+// addSteps is the number of steps in the add-entry form.
+const addSteps = 5
+
+// addStepLabels names the add-entry form steps, in order.
+var addStepLabels = []string{"Command", "Description", "Category", "Tags", "Level"}
+
+// addStepHints is the short hint shown under each add-entry step.
+var addStepHints = []string{
+	"The command itself, e.g. docker ps -a",
+	"What it does, in a few words (optional)",
+	"An existing category, or a new name to create it",
+	"Comma separated, e.g. containers, list (optional)",
+	"1 Essential, 2 Common or 3 Advanced (empty = Common)",
+}
+
 // clearStatusMsg clears the status line after the copy toast expires.
 type clearStatusMsg struct{ seq int }
 
 // Model is the Bubbletea model for the browser.
 type Model struct {
 	store      *db.Store
-	version    string // shown in the header, e.g. "1.1.0"
+	version    string // shown in the header, e.g. "1.2.0"
 	input      textinput.Model
 	sides      []sideItem
 	activeSide int
@@ -69,6 +98,23 @@ type Model struct {
 	width      int
 	height     int
 	err        error
+	// Prompt state: the overlay form currently open, if any.
+	prompt promptKind
+	// formInput is the text field of the add-entry and add-category
+	// prompts. It is separate from the search input, which keeps its
+	// value while a prompt is open.
+	formInput textinput.Model
+	// addStep is the current step of the add-entry form (0..addSteps-1).
+	addStep int
+	// addCmd, addDesc, addCat and addTags hold the values collected so
+	// far by the add-entry form.
+	addCmd  string
+	addDesc string
+	addCat  string
+	addTags string
+	// addErr is an inline error shown inside the add form (e.g. a bad
+	// level), without closing the form.
+	addErr string
 }
 
 // New builds the model and loads the first page of results.
@@ -146,7 +192,11 @@ func (m *Model) search() {
 	if m.activeIsFavorites() {
 		results, err = m.searchFavorites()
 	} else {
-		results, err = m.store.Search(m.input.Value(), m.activeCategoryName(), m.level, 200)
+		// The limit is well above the largest category (Linux, 513),
+		// so every entry stays reachable: with a smaller cap, entries
+		// sorting late in a big category (Docker has 214) would be
+		// cut off and could never be selected.
+		results, err = m.store.Search(m.input.Value(), m.activeCategoryName(), m.level, 1000)
 	}
 	if err != nil {
 		m.err = err
@@ -189,13 +239,18 @@ func (m *Model) searchFavorites() ([]db.Entry, error) {
 	return out, nil
 }
 
+// rowHeight is how many terminal lines one result takes: two content
+// lines (command, then description) plus a blank line between rows, so
+// the list breathes instead of packing every command together.
+const rowHeight = 3
+
 // visibleRows is how many result rows fit in the list column.
 func (m *Model) visibleRows() int {
-	h := m.bodyHeight()
-	if h < 3 {
-		h = 3
+	v := m.bodyHeight() / rowHeight
+	if v < 1 {
+		v = 1
 	}
-	return h
+	return v
 }
 
 // bodyHeight is the height of the sidebar/list/detail row.
@@ -280,27 +335,304 @@ func (m *Model) copySelected() tea.Cmd {
 	})
 }
 
+// toast shows a status line that clears itself after 2.5 seconds, the
+// same way the copy toast does. It returns the tick command, if any.
+func (m *Model) toast(msg string, isErr bool) tea.Cmd {
+	m.statusSeq++
+	seq := m.statusSeq
+	m.status = msg
+	m.statusErr = isErr
+	return tea.Tick(2500*time.Millisecond, func(time.Time) tea.Msg {
+		return clearStatusMsg{seq: seq}
+	})
+}
+
 // toggleFavorite stars or unstars the highlighted entry.
-func (m *Model) toggleFavorite() {
+func (m *Model) toggleFavorite() tea.Cmd {
 	e, ok := m.selected()
 	if !ok {
-		return
+		return nil
 	}
 	_, err := m.store.SetFavorite(e.ID, !e.Favorite)
 	if err != nil {
-		m.status = "Favorite failed: " + err.Error()
-		m.statusErr = true
-		return
+		return m.toast("Favorite failed: "+err.Error(), true)
 	}
-	m.statusSeq++
-	if e.Favorite {
-		m.status = "Removed from favorites"
-	} else {
-		m.status = "★ Added to favorites"
-	}
-	m.statusErr = false
 	m.reload()
 	m.search()
+	if e.Favorite {
+		return m.toast("Removed from favorites", false)
+	}
+	return m.toast("★ Added to favorites", false)
+}
+
+// newFormInput builds the text field used by the prompts.
+func (m Model) newFormInput(placeholder string) textinput.Model {
+	ti := textinput.New()
+	ti.Prompt = "❯ "
+	ti.Placeholder = placeholder
+	ti.CharLimit = 200
+	ti.Width = m.formWidth()
+	ti.Focus()
+	return ti
+}
+
+// formWidth is the text width of the prompt input, sized to the terminal.
+func (m Model) formWidth() int {
+	w := m.width - 12
+	if w > 52 {
+		w = 52
+	}
+	if w < 20 {
+		w = 20
+	}
+	return w
+}
+
+// openAddForm starts the sequential add-entry form (list mode only).
+func (m *Model) openAddForm() tea.Cmd {
+	m.prompt = promptAdd
+	m.addStep = 0
+	m.addCmd, m.addDesc, m.addCat, m.addTags = "", "", "", ""
+	m.addErr = ""
+	m.formInput = m.newFormInput("Command, e.g. docker ps -a")
+	m.status = ""
+	return textinput.Blink
+}
+
+// openCategoryForm starts the single-field add-category prompt.
+func (m *Model) openCategoryForm() tea.Cmd {
+	m.prompt = promptCategory
+	m.addErr = ""
+	m.formInput = m.newFormInput("Category name, e.g. kubernetes")
+	m.status = ""
+	return textinput.Blink
+}
+
+// openDeleteConfirm asks whether to delete the highlighted entry.
+func (m *Model) openDeleteConfirm() {
+	if _, ok := m.selected(); !ok {
+		return
+	}
+	m.prompt = promptDelete
+	m.status = ""
+}
+
+// cancelPrompt closes any open prompt and discards what it collected.
+func (m *Model) cancelPrompt() {
+	m.prompt = promptNone
+	m.addErr = ""
+	m.formInput.Blur()
+}
+
+// parseLevelInput accepts the level spellings the add form allows:
+// 1/2/3, e/c/a, or the full names, case-insensitive. "" means Common.
+func parseLevelInput(s string) (int, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "2", "c", "common":
+		return db.LevelCommon, nil
+	case "1", "e", "essential":
+		return db.LevelEssential, nil
+	case "3", "a", "advanced":
+		return db.LevelAdvanced, nil
+	}
+	return 0, errBadLevel
+}
+
+var errBadLevel = errString("use 1, 2, 3 or essential / common / advanced")
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
+
+// titleCaseName turns a category name into a display title: first letter
+// upper-case, the rest as typed ("kubernetes" -> "Kubernetes").
+func titleCaseName(name string) string {
+	if name == "" {
+		return ""
+	}
+	r := []rune(name)
+	r[0] = []rune(strings.ToUpper(string(r[0])))[0]
+	return string(r)
+}
+
+// normalizeCategoryName lower-cases a typed category name so "Linux"
+// matches the existing "linux" category instead of creating a duplicate.
+func normalizeCategoryName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+// selectCategoryByName moves the sidebar to the named category and
+// refreshes the results. It reports whether the category was found.
+func (m *Model) selectCategoryByName(name string) bool {
+	for i, s := range m.sides {
+		if s.kind == sideCategory && s.name == name {
+			m.activeSide = i
+			m.cursor, m.offset = 0, 0
+			m.search()
+			return true
+		}
+	}
+	return false
+}
+
+// selectEntryByID moves the cursor to the entry with the given id, if it
+// is in the current result list.
+func (m *Model) selectEntryByID(id int64) {
+	for i, e := range m.results {
+		if e.ID == id {
+			m.cursor = i
+			m.ensureVisible()
+			return
+		}
+	}
+}
+
+// advanceAdd moves the add-entry form one step forward, saving on the
+// last step. Enter on an empty command cancels without saving.
+func (m *Model) advanceAdd() tea.Cmd {
+	v := strings.TrimSpace(m.formInput.Value())
+	switch m.addStep {
+	case 0: // Command (required).
+		if v == "" {
+			m.cancelPrompt()
+			return m.toast("Command is empty", true)
+		}
+		m.addCmd = v
+		m.addStep = 1
+		m.addErr = ""
+		m.formInput = m.newFormInput("Description (optional)")
+	case 1: // Description (optional).
+		m.addDesc = v
+		m.addStep = 2
+		m.addErr = ""
+		m.formInput = m.newFormInput("Linux, Docker, Git, PowerShell or a new name")
+	case 2: // Category (existing name, or a new one to create).
+		m.addCat = normalizeCategoryName(v)
+		m.addStep = 3
+		m.addErr = ""
+		m.formInput = m.newFormInput("Tags, comma separated (optional)")
+	case 3: // Tags (optional).
+		m.addTags = v
+		m.addStep = 4
+		m.addErr = ""
+		m.formInput = m.newFormInput("Level: 1 Essential, 2 Common, 3 Advanced")
+	default: // Level, then save.
+		level, err := parseLevelInput(v)
+		if err != nil {
+			m.addErr = err.Error()
+			return nil
+		}
+		return m.saveAdd(level)
+	}
+	return textinput.Blink
+}
+
+// saveAdd inserts the collected add-form values as a user entry, then
+// returns to the list with the new entry selected.
+func (m *Model) saveAdd(level int) tea.Cmd {
+	name := m.addCat
+	if name == "" {
+		name = "general"
+	}
+	id, err := m.store.AddEntry(db.Entry{
+		Command:       m.addCmd,
+		Title:         m.addCmd,
+		Description:   m.addDesc,
+		Tags:          m.addTags,
+		Category:      name,
+		CategoryTitle: titleCaseName(name),
+		Level:         level,
+	})
+	if err != nil {
+		m.cancelPrompt()
+		return m.toast("Add failed: "+err.Error(), true)
+	}
+	title := titleCaseName(name)
+	m.cancelPrompt()
+	// The new entry must be visible: clear the search, switch to its
+	// category, and put the cursor on it.
+	m.input.SetValue("")
+	m.reload()
+	m.selectCategoryByName(name)
+	m.selectEntryByID(id)
+	return m.toast("✓ Added to "+title, false)
+}
+
+// saveCategory creates the typed category, or reports that it exists.
+func (m *Model) saveCategory() tea.Cmd {
+	name := normalizeCategoryName(m.formInput.Value())
+	if name == "" {
+		m.cancelPrompt()
+		return m.toast("Category name is empty", true)
+	}
+	_, existed, err := m.store.AddCategory(name, titleCaseName(name))
+	if err != nil {
+		m.cancelPrompt()
+		return m.toast("Add category failed: "+err.Error(), true)
+	}
+	title := titleCaseName(name)
+	m.cancelPrompt()
+	m.input.SetValue("")
+	m.reload()
+	if existed {
+		m.selectCategoryByName(name)
+		return m.toast("Category already exists", true)
+	}
+	m.selectCategoryByName(name)
+	return m.toast("✓ Added category "+title, false)
+}
+
+// deleteSelected deletes the highlighted entry after confirmation.
+func (m *Model) deleteSelected() tea.Cmd {
+	e, ok := m.selected()
+	if !ok {
+		m.cancelPrompt()
+		return nil
+	}
+	if _, err := m.store.DeleteEntry(e.ID); err != nil {
+		m.cancelPrompt()
+		return m.toast("Delete failed: "+err.Error(), true)
+	}
+	m.cancelPrompt()
+	m.reload()
+	m.search()
+	return m.toast("✓ Deleted", false)
+}
+
+// updatePrompt handles keys while a prompt overlay is open. It owns the
+// keyboard: typing goes to the prompt's text field, Enter advances or
+// confirms, Esc cancels, and y/n answers the delete question.
+func (m Model) updatePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch m.prompt {
+	case promptDelete:
+		switch msg.String() {
+		case "y", "Y":
+			return m, m.deleteSelected()
+		case "n", "N", "esc":
+			m.cancelPrompt()
+			return m, nil
+		}
+		return m, nil
+	case promptAdd:
+		switch msg.String() {
+		case "esc":
+			m.cancelPrompt()
+			return m, nil
+		case "enter":
+			return m, m.advanceAdd()
+		}
+	case promptCategory:
+		switch msg.String() {
+		case "esc":
+			m.cancelPrompt()
+			return m, nil
+		case "enter":
+			return m, m.saveCategory()
+		}
+	}
+	var cmd tea.Cmd
+	m.formInput, cmd = m.formInput.Update(msg)
+	return m, cmd
 }
 
 // Update handles messages.
@@ -310,6 +642,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.input.Width = max(20, msg.Width-8)
+		m.formInput.Width = m.formWidth()
 		m.ensureVisible()
 		return m, nil
 
@@ -324,6 +657,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
+		}
+		// An open prompt owns the keyboard (except Ctrl+C).
+		if m.prompt != promptNone {
+			return m.updatePrompt(msg)
+		}
+		switch msg.String() {
 		case "?":
 			m.showHelp = !m.showHelp
 			return m, nil
@@ -412,10 +751,16 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter", "c":
 		return m, m.copySelected()
 	case "s":
-		m.toggleFavorite()
-		return m, nil
+		return m, m.toggleFavorite()
 	case "f":
 		m.cycleLevel(1)
+		return m, nil
+	case "a":
+		return m, m.openAddForm()
+	case "C":
+		return m, m.openCategoryForm()
+	case "d":
+		m.openDeleteConfirm()
 		return m, nil
 	case "q":
 		return m, tea.Quit
