@@ -31,6 +31,7 @@ type SeedEntry struct {
 	Description string `json:"description"`
 	Tags        string `json:"tags"`
 	Example     string `json:"example"`
+	Level       int    `json:"level"`
 }
 
 // EnsureCategory returns the id of a category, creating it if needed.
@@ -99,13 +100,17 @@ func (s *Store) CountEntries() (int, error) {
 // GetEntry returns one entry by id.
 func (s *Store) GetEntry(id int64) (Entry, error) {
 	var e Entry
+	var fav int
 	err := s.db.QueryRow(`
 		SELECT e.id, e.category_id, c.name, c.title, e.command, e.title,
-		       e.description, e.tags, e.example, e.source, e.created_at, e.updated_at
+		       e.description, e.tags, e.example, e.source, e.level, e.favorite,
+		       e.created_at, e.updated_at
 		FROM entries e JOIN categories c ON c.id = e.category_id
 		WHERE e.id = ?`, id).Scan(
 		&e.ID, &e.CategoryID, &e.Category, &e.CategoryTitle, &e.Command, &e.Title,
-		&e.Description, &e.Tags, &e.Example, &e.Source, &e.CreatedAt, &e.UpdatedAt)
+		&e.Description, &e.Tags, &e.Example, &e.Source, &e.Level, &fav,
+		&e.CreatedAt, &e.UpdatedAt)
+	e.Favorite = fav != 0
 	return e, err
 }
 
@@ -118,10 +123,13 @@ func (s *Store) AddEntry(e Entry) (int64, error) {
 	if e.Title == "" {
 		e.Title = e.Command
 	}
+	if e.Level < LevelEssential || e.Level > LevelAdvanced {
+		e.Level = LevelCommon
+	}
 	res, err := s.db.Exec(`
-		INSERT INTO entries (category_id, command, title, description, tags, example, source)
-		VALUES (?, ?, ?, ?, ?, ?, 'user')`,
-		catID, e.Command, e.Title, e.Description, e.Tags, e.Example)
+		INSERT INTO entries (category_id, command, title, description, tags, example, source, level)
+		VALUES (?, ?, ?, ?, ?, ?, 'user', ?)`,
+		catID, e.Command, e.Title, e.Description, e.Tags, e.Example, e.Level)
 	if err != nil {
 		return 0, err
 	}
@@ -134,12 +142,15 @@ func (s *Store) UpdateEntry(e Entry) error {
 	if err != nil {
 		return err
 	}
+	if e.Level < LevelEssential || e.Level > LevelAdvanced {
+		e.Level = LevelCommon
+	}
 	_, err = s.db.Exec(`
 		UPDATE entries
 		SET category_id = ?, command = ?, title = ?, description = ?,
-		    tags = ?, example = ?, updated_at = datetime('now')
+		    tags = ?, example = ?, level = ?, updated_at = datetime('now')
 		WHERE id = ?`,
-		catID, e.Command, e.Title, e.Description, e.Tags, e.Example, e.ID)
+		catID, e.Command, e.Title, e.Description, e.Tags, e.Example, e.Level, e.ID)
 	return err
 }
 
@@ -158,11 +169,14 @@ func scanEntries(rows *sql.Rows) ([]Entry, error) {
 	var out []Entry
 	for rows.Next() {
 		var e Entry
+		var fav int
 		if err := rows.Scan(
 			&e.ID, &e.CategoryID, &e.Category, &e.CategoryTitle, &e.Command, &e.Title,
-			&e.Description, &e.Tags, &e.Example, &e.Source, &e.CreatedAt, &e.UpdatedAt); err != nil {
+			&e.Description, &e.Tags, &e.Example, &e.Source, &e.Level, &fav,
+			&e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
+		e.Favorite = fav != 0
 		out = append(out, e)
 	}
 	return out, rows.Err()
@@ -170,16 +184,19 @@ func scanEntries(rows *sql.Rows) ([]Entry, error) {
 
 const entryColumns = `
 	SELECT e.id, e.category_id, c.name, c.title, e.command, e.title,
-	       e.description, e.tags, e.example, e.source, e.created_at, e.updated_at
+	       e.description, e.tags, e.example, e.source, e.level, e.favorite,
+	       e.created_at, e.updated_at
 	FROM entries e JOIN categories c ON c.id = e.category_id`
 
-// list returns entries, optionally in one category. category "" means all.
-func (s *Store) list(category string, limit int) ([]Entry, error) {
-	q := entryColumns + ` WHERE (? = '' OR c.name = ?) ORDER BY c.name, e.command`
+// list returns entries, optionally in one category and at one level.
+// category "" means all categories; level 0 means all levels.
+func (s *Store) list(category string, level, limit int) ([]Entry, error) {
+	q := entryColumns + ` WHERE (? = '' OR c.name = ?) AND (? = 0 OR e.level = ?)
+		ORDER BY c.name, e.command`
 	if limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", limit)
 	}
-	rows, err := s.db.Query(q, category, category)
+	rows, err := s.db.Query(q, category, category, level, level)
 	if err != nil {
 		return nil, err
 	}
@@ -201,16 +218,16 @@ func ftsMatchExpr(query string) string {
 	return strings.Join(parts, " AND ")
 }
 
-func (s *Store) likeSearch(query, category string, limit int) ([]Entry, error) {
+func (s *Store) likeSearch(query, category string, level, limit int) ([]Entry, error) {
 	like := "%" + query + "%"
-	q := entryColumns + ` WHERE (? = '' OR c.name = ?)
+	q := entryColumns + ` WHERE (? = '' OR c.name = ?) AND (? = 0 OR e.level = ?)
 		AND (e.command LIKE ? OR e.title LIKE ? OR e.description LIKE ?
 		     OR e.tags LIKE ? OR e.example LIKE ?)
 		ORDER BY c.name, e.command`
 	if limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", limit)
 	}
-	rows, err := s.db.Query(q, category, category, like, like, like, like, like)
+	rows, err := s.db.Query(q, category, category, level, level, like, like, like, like, like)
 	if err != nil {
 		return nil, err
 	}
@@ -218,34 +235,69 @@ func (s *Store) likeSearch(query, category string, limit int) ([]Entry, error) {
 }
 
 // Search returns entries matching query with live FTS5 prefix search.
-// An empty query lists entries instead. category "" means all categories.
-// limit <= 0 means no limit.
-func (s *Store) Search(query, category string, limit int) ([]Entry, error) {
+// An empty query lists entries instead. category "" means all categories,
+// level 0 means all levels. limit <= 0 means no limit.
+func (s *Store) Search(query, category string, level, limit int) ([]Entry, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
-		return s.list(category, limit)
+		return s.list(category, level, limit)
 	}
 	match := ftsMatchExpr(query)
 	if match == "" {
-		return s.likeSearch(query, category, limit)
+		return s.likeSearch(query, category, level, limit)
 	}
 	q := `
 		SELECT e.id, e.category_id, c.name, c.title, e.command, e.title,
-		       e.description, e.tags, e.example, e.source, e.created_at, e.updated_at
+		       e.description, e.tags, e.example, e.source, e.level, e.favorite,
+		       e.created_at, e.updated_at
 		FROM entries_fts f
 		JOIN entries e ON e.id = f.rowid
 		JOIN categories c ON c.id = e.category_id
-		WHERE f MATCH ? AND (? = '' OR c.name = ?)
+		WHERE f MATCH ? AND (? = '' OR c.name = ?) AND (? = 0 OR e.level = ?)
 		ORDER BY rank`
 	if limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", limit)
 	}
-	rows, err := s.db.Query(q, match, category, category)
+	rows, err := s.db.Query(q, match, category, category, level, level)
 	if err != nil {
 		// Odd punctuation can break MATCH syntax; fall back to LIKE.
-		return s.likeSearch(query, category, limit)
+		return s.likeSearch(query, category, level, limit)
 	}
 	return scanEntries(rows)
+}
+
+// ListFavorites returns starred entries, most useful first.
+func (s *Store) ListFavorites(limit int) ([]Entry, error) {
+	q := entryColumns + ` WHERE e.favorite = 1 ORDER BY c.name, e.command`
+	if limit > 0 {
+		q += fmt.Sprintf(" LIMIT %d", limit)
+	}
+	rows, err := s.db.Query(q)
+	if err != nil {
+		return nil, err
+	}
+	return scanEntries(rows)
+}
+
+// CountFavorites returns the number of starred entries.
+func (s *Store) CountFavorites() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM entries WHERE favorite = 1`).Scan(&n)
+	return n, err
+}
+
+// SetFavorite stars or unstars one entry. It reports whether the entry exists.
+func (s *Store) SetFavorite(id int64, fav bool) (bool, error) {
+	v := 0
+	if fav {
+		v = 1
+	}
+	res, err := s.db.Exec(`UPDATE entries SET favorite = ?, updated_at = datetime('now') WHERE id = ?`, v, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // ImportSeedBytes parses one seed JSON document and upserts its entries
@@ -291,6 +343,10 @@ func (s *Store) ImportSeedBytes(data []byte) (inserted, updated int, err error) 
 			catIDs[e.Category] = catID
 		}
 		title := firstNonEmpty(e.Title, e.Command)
+		level := e.Level
+		if level < LevelEssential || level > LevelAdvanced {
+			level = LevelCommon
+		}
 		var id int64
 		qerr := tx.QueryRow(
 			`SELECT id FROM entries WHERE category_id = ? AND command = ? AND source = 'seed'`,
@@ -299,18 +355,18 @@ func (s *Store) ImportSeedBytes(data []byte) (inserted, updated int, err error) 
 		case nil:
 			if _, err := tx.Exec(`
 				UPDATE entries
-				SET title = ?, description = ?, tags = ?, example = ?,
+				SET title = ?, description = ?, tags = ?, example = ?, level = ?,
 				    updated_at = datetime('now')
 				WHERE id = ?`,
-				title, e.Description, e.Tags, e.Example, id); err != nil {
+				title, e.Description, e.Tags, e.Example, level, id); err != nil {
 				return 0, 0, err
 			}
 			updated++
 		case sql.ErrNoRows:
 			if _, err := tx.Exec(`
-				INSERT INTO entries (category_id, command, title, description, tags, example, source)
-				VALUES (?, ?, ?, ?, ?, ?, 'seed')`,
-				catID, e.Command, title, e.Description, e.Tags, e.Example); err != nil {
+				INSERT INTO entries (category_id, command, title, description, tags, example, source, level)
+				VALUES (?, ?, ?, ?, ?, ?, 'seed', ?)`,
+				catID, e.Command, title, e.Description, e.Tags, e.Example, level); err != nil {
 				return 0, 0, err
 			}
 			inserted++
@@ -362,19 +418,32 @@ func (s *Store) IsSeeded() (bool, error) {
 	return v == "1", nil
 }
 
-// EnsureSeeded imports the embedded seed data on first run only.
+// SeedVersion is bumped whenever the embedded seed changes in a way that
+// existing databases must pick up (new columns, new levels, ...).
+const SeedVersion = "2"
+
+// EnsureSeeded imports the embedded seed data on first run, and re-imports
+// it when the seed version changed (e.g. a v1.0.0 database gaining levels).
 func (s *Store) EnsureSeeded(seed []byte) error {
 	seeded, err := s.IsSeeded()
 	if err != nil {
 		return err
 	}
-	if seeded {
+	var v string
+	verr := s.db.QueryRow(`SELECT value FROM meta WHERE key = 'seed_version'`).Scan(&v)
+	needsImport := !seeded || verr == sql.ErrNoRows || v != SeedVersion
+	if verr != nil && verr != sql.ErrNoRows {
+		return verr
+	}
+	if !needsImport {
 		return nil
 	}
 	if _, _, err := s.ImportSeedBytes(seed); err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT OR REPLACE INTO meta (key, value) VALUES ('seeded', '1')`)
+	_, err = s.db.Exec(
+		`INSERT OR REPLACE INTO meta (key, value) VALUES ('seeded', '1'), ('seed_version', ?)`,
+		SeedVersion)
 	return err
 }
 

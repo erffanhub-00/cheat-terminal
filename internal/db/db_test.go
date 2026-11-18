@@ -1,11 +1,13 @@
 package db
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/erffanhub-00/cheat-terminal/data"
+	_ "modernc.org/sqlite"
 )
 
 func openTestStore(t *testing.T) *Store {
@@ -69,7 +71,7 @@ func TestSearch(t *testing.T) {
 		t.Fatalf("EnsureSeeded: %v", err)
 	}
 	// Prefix search finds commands while typing.
-	got, err := s.Search("docker ps", "", 10)
+	got, err := s.Search("docker ps", "", 0, 10)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -89,7 +91,7 @@ func TestSearch(t *testing.T) {
 		t.Fatalf("'docker ps -a' not in results for 'docker ps'")
 	}
 	// Category filter.
-	got, err = s.Search("ps", "linux", 50)
+	got, err = s.Search("ps", "linux", 0, 50)
 	if err != nil {
 		t.Fatalf("Search linux: %v", err)
 	}
@@ -99,7 +101,7 @@ func TestSearch(t *testing.T) {
 		}
 	}
 	// Empty query lists everything in a category.
-	got, err = s.Search("", "git", 0)
+	got, err = s.Search("", "git", 0, 0)
 	if err != nil {
 		t.Fatalf("list git: %v", err)
 	}
@@ -107,7 +109,7 @@ func TestSearch(t *testing.T) {
 		t.Fatalf("expected git entries for empty query")
 	}
 	// Unknown words return nothing, not an error.
-	got, err = s.Search("zzzqqqxxx", "", 10)
+	got, err = s.Search("zzzqqqxxx", "", 0, 10)
 	if err != nil {
 		t.Fatalf("Search unknown: %v", err)
 	}
@@ -132,7 +134,7 @@ func TestCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddEntry: %v", err)
 	}
-	got, err := s.Search("my-test-command", "", 10)
+	got, err := s.Search("my-test-command", "", 0, 10)
 	if err != nil {
 		t.Fatalf("Search after add: %v", err)
 	}
@@ -151,7 +153,7 @@ func TestCRUD(t *testing.T) {
 	if err := s.UpdateEntry(e); err != nil {
 		t.Fatalf("UpdateEntry: %v", err)
 	}
-	got, _ = s.Search("Edited description", "", 10)
+	got, _ = s.Search("Edited description", "", 0, 10)
 	if len(got) != 1 {
 		t.Fatalf("edited entry not searchable by new text")
 	}
@@ -167,7 +169,7 @@ func TestCRUD(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("DeleteEntry: ok=%v err=%v", ok, err)
 	}
-	got, _ = s.Search("my-test-command", "", 10)
+	got, _ = s.Search("my-test-command", "", 0, 10)
 	if len(got) != 0 {
 		t.Fatalf("deleted entry still searchable")
 	}
@@ -219,7 +221,7 @@ func TestImportDir(t *testing.T) {
 	if ins != 1 || upd != 0 {
 		t.Fatalf("ImportSeedDir: inserted=%d updated=%d, want 1/0", ins, upd)
 	}
-	got, err := s.Search("mytool", "", 10)
+	got, err := s.Search("mytool", "", 0, 10)
 	if err != nil || len(got) != 1 {
 		t.Fatalf("imported entry not searchable: %v %v", got, err)
 	}
@@ -228,5 +230,227 @@ func TestImportDir(t *testing.T) {
 	}
 	if _, _, err := s.ImportSeedDir(t.TempDir()); err == nil {
 		t.Fatalf("empty dir should fail")
+	}
+}
+
+func TestLevels(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.EnsureSeeded(data.SeedJSON); err != nil {
+		t.Fatalf("EnsureSeeded: %v", err)
+	}
+	// Every level has entries in the seed.
+	for _, lvl := range []int{LevelEssential, LevelCommon, LevelAdvanced} {
+		got, err := s.Search("", "", lvl, 0)
+		if err != nil {
+			t.Fatalf("Search level %d: %v", lvl, err)
+		}
+		if len(got) == 0 {
+			t.Fatalf("no entries at level %d", lvl)
+		}
+		for _, e := range got {
+			if e.Level != lvl {
+				t.Fatalf("level filter leaked: entry level %d in level %d", e.Level, lvl)
+			}
+		}
+	}
+	// Level and category filters combine.
+	got, err := s.Search("", "docker", LevelEssential, 0)
+	if err != nil {
+		t.Fatalf("Search docker essential: %v", err)
+	}
+	if len(got) == 0 {
+		t.Fatalf("no essential docker entries")
+	}
+	for _, e := range got {
+		if e.Category != "docker" || e.Level != LevelEssential {
+			t.Fatalf("combined filter leaked: %+v", e)
+		}
+	}
+	// A text query respects the level filter too.
+	got, err = s.Search("docker ps", "", LevelAdvanced, 10)
+	if err != nil {
+		t.Fatalf("Search with level: %v", err)
+	}
+	for _, e := range got {
+		if e.Level != LevelAdvanced {
+			t.Fatalf("query level filter leaked: %+v", e)
+		}
+	}
+	// Level names and parsing.
+	if LevelName(LevelEssential) != "Essential" || LevelName(0) != "All" {
+		t.Fatalf("LevelName wrong")
+	}
+	for _, tc := range []struct {
+		in   string
+		want int
+	}{
+		{"essential", LevelEssential}, {"1", LevelEssential},
+		{"common", LevelCommon}, {"advanced", LevelAdvanced},
+		{"", LevelAll}, {"all", LevelAll},
+	} {
+		got, err := ParseLevel(tc.in)
+		if err != nil || got != tc.want {
+			t.Fatalf("ParseLevel(%q) = %d, %v; want %d", tc.in, got, err, tc.want)
+		}
+	}
+	if _, err := ParseLevel("nonsense"); err == nil {
+		t.Fatalf("ParseLevel accepted a bad level")
+	}
+}
+
+func TestFavorites(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.EnsureSeeded(data.SeedJSON); err != nil {
+		t.Fatalf("EnsureSeeded: %v", err)
+	}
+	got, err := s.Search("docker ps", "", 0, 5)
+	if err != nil || len(got) == 0 {
+		t.Fatalf("seed search: %v %v", got, err)
+	}
+	id := got[0].ID
+	if n, _ := s.CountFavorites(); n != 0 {
+		t.Fatalf("favorites not empty at start: %d", n)
+	}
+	ok, err := s.SetFavorite(id, true)
+	if err != nil || !ok {
+		t.Fatalf("SetFavorite: ok=%v err=%v", ok, err)
+	}
+	favs, err := s.ListFavorites(0)
+	if err != nil || len(favs) != 1 || favs[0].ID != id {
+		t.Fatalf("ListFavorites: %v %v", favs, err)
+	}
+	if !favs[0].Favorite {
+		t.Fatalf("starred entry does not report Favorite")
+	}
+	e, err := s.GetEntry(id)
+	if err != nil || !e.Favorite {
+		t.Fatalf("GetEntry after star: %v %+v", err, e)
+	}
+	// A seed re-import must keep the star.
+	if _, _, err := s.ImportSeedBytes(data.SeedJSON); err != nil {
+		t.Fatalf("re-import: %v", err)
+	}
+	if n, _ := s.CountFavorites(); n != 1 {
+		t.Fatalf("star lost after seed re-import: %d", n)
+	}
+	// Unstar.
+	ok, err = s.SetFavorite(id, false)
+	if err != nil || !ok {
+		t.Fatalf("unstar: ok=%v err=%v", ok, err)
+	}
+	if n, _ := s.CountFavorites(); n != 0 {
+		t.Fatalf("favorites not empty after unstar: %d", n)
+	}
+	// Starring a missing id reports false, not an error.
+	ok, err = s.SetFavorite(999999, true)
+	if err != nil || ok {
+		t.Fatalf("SetFavorite on missing id: ok=%v err=%v", ok, err)
+	}
+}
+
+// v1Schema is the schema as of v1.0.0: no level/favorite columns, no
+// seed_version in meta. A database built with it must migrate cleanly.
+const v1Schema = `
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, title TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  command TEXT NOT NULL, title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '',
+  example TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'user' CHECK (source IN ('seed','user')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (category_id, command, source)
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(command, title, description, tags, example, content='entries', content_rowid='id');
+CREATE TRIGGER IF NOT EXISTS entries_ai AFTER INSERT ON entries BEGIN
+  INSERT INTO entries_fts(rowid, command, title, description, tags, example)
+  VALUES (new.id, new.command, new.title, new.description, new.tags, new.example);
+END;
+CREATE TRIGGER IF NOT EXISTS entries_ad AFTER DELETE ON entries BEGIN
+  INSERT INTO entries_fts(entries_fts, rowid, command, title, description, tags, example)
+  VALUES ('delete', old.id, old.command, old.title, old.description, old.tags, old.example);
+END;
+CREATE TRIGGER IF NOT EXISTS entries_au AFTER UPDATE ON entries BEGIN
+  INSERT INTO entries_fts(entries_fts, rowid, command, title, description, tags, example)
+  VALUES ('delete', old.id, old.command, old.title, old.description, old.tags, old.example);
+  INSERT INTO entries_fts(rowid, command, title, description, tags, example)
+  VALUES (new.id, new.command, new.title, new.description, new.tags, new.example);
+END;
+CREATE INDEX IF NOT EXISTS entries_category_idx ON entries(category_id);
+`
+
+func TestMigrationFromV1(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v1.db")
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := raw.Exec(v1Schema); err != nil {
+		t.Fatalf("v1 schema: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO categories (name, title) VALUES ('docker', 'Docker')`); err != nil {
+		t.Fatalf("v1 category: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO entries (category_id, command, title, description, source)
+		VALUES (1, 'docker ps -a', 'docker ps -a', 'List all containers', 'seed')`); err != nil {
+		t.Fatalf("v1 seed entry: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO entries (category_id, command, title, description, source)
+		VALUES (1, 'my-old-command', 'my-old-command', 'My own entry', 'user')`); err != nil {
+		t.Fatalf("v1 user entry: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO meta (key, value) VALUES ('seeded', '1')`); err != nil {
+		t.Fatalf("v1 meta: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw: %v", err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open v1 database: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	// The migration added the columns; old rows get the defaults.
+	got, err := s.Search("docker ps", "", 0, 10)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("search after migrate: %v %v", got, err)
+	}
+	if got[0].Level != LevelCommon || got[0].Favorite {
+		t.Fatalf("migrated defaults wrong: level=%d favorite=%v", got[0].Level, got[0].Favorite)
+	}
+	// The user entry survived the migration.
+	if _, err := s.GetEntry(2); err != nil {
+		t.Fatalf("user entry lost in migration: %v", err)
+	}
+	// EnsureSeeded sees the old seed version and re-imports the levels.
+	if err := s.EnsureSeeded(data.SeedJSON); err != nil {
+		t.Fatalf("EnsureSeeded after migrate: %v", err)
+	}
+	got, err = s.Search("docker ps", "", 0, 10)
+	if err != nil {
+		t.Fatalf("search after re-seed: %v", err)
+	}
+	var ps *Entry
+	for i := range got {
+		if got[i].Command == "docker ps -a" {
+			ps = &got[i]
+		}
+	}
+	if ps == nil {
+		t.Fatalf("'docker ps -a' missing after re-seed")
+	}
+	if ps.Level != LevelEssential {
+		t.Fatalf("'docker ps -a' level = %d, want Essential (1)", ps.Level)
+	}
+	// And the user entry is still there, untouched.
+	if _, err := s.GetEntry(2); err != nil {
+		t.Fatalf("user entry lost in re-seed: %v", err)
+	}
+	if n, _ := s.CountEntries(); n < 1000 {
+		t.Fatalf("re-seed did not import the full seed: %d entries", n)
 	}
 }

@@ -40,6 +40,101 @@ SHELL_KEYWORDS = {
 }
 CODE_BLOCK_LANGS = {"", "bash", "sh", "shell", "powershell", "ps1", "console", "text"}
 
+# Usefulness levels: 1 = Essential (everyday commands), 2 = Common,
+# 3 = Advanced (long or composed commands). The level is the "how useful
+# is this command" filter in the TUI and CLI (--level).
+LEVEL_ESSENTIAL = 1
+LEVEL_COMMON = 2
+LEVEL_ADVANCED = 3
+
+# Base commands/verbs that count as essential, per category.
+ESSENTIALS = {
+    "linux": {
+        "ls", "cd", "pwd", "cp", "mv", "rm", "mkdir", "cat", "less",
+        "head", "tail", "grep", "find", "ps", "top", "kill",
+        "df", "du", "free", "chmod", "chown", "ssh", "scp", "tar", "curl",
+        "wget", "ping", "ip", "ss", "systemctl", "journalctl", "man",
+        "which", "history", "clear", "exit", "echo", "touch",
+        "nano", "vim", "vi", "sudo", "apt", "pacman", "env", "export",
+        "alias", "source", "ln", "wc", "sort", "uniq", "cut", "awk", "sed",
+        "tee", "xargs", "watch", "whoami", "hostname", "uname", "date",
+        "uptime", "mount", "umount", "crontab", "tmux", "screen",
+    },
+    "git": {
+        "status", "add", "commit", "push", "pull", "clone", "branch",
+        "checkout", "switch", "restore", "log", "diff", "show", "stash",
+        "merge", "rebase", "remote", "fetch", "reset", "revert", "tag",
+        "blame", "config", "init", "mv", "rm", "clean", "cherry-pick",
+        "worktree", "submodule", "gc", "reflog", "help",
+    },
+    "docker": {
+        "ps", "images", "image", "run", "start", "stop", "restart", "rm",
+        "rmi", "logs", "exec", "build", "pull", "push", "inspect", "cp",
+        "network", "volume", "container", "compose", "system", "info",
+        "version", "login", "tag", "top", "stats", "port", "create", "kill",
+        "rename", "search",
+    },
+    "powershell": {
+        "get-help", "get-command", "get-childitem", "set-location",
+        "get-location", "get-content", "set-content", "add-content",
+        "get-process", "stop-process", "start-process", "get-service",
+        "start-service", "stop-service", "test-connection", "copy-item",
+        "move-item", "remove-item", "rename-item", "new-item", "get-item",
+        "test-path", "get-date", "clear-host", "get-history", "get-alias",
+        "set-alias", "set-executionpolicy", "get-executionpolicy",
+        "select-object", "where-object", "foreach-object", "sort-object",
+        "measure-object", "out-file", "invoke-webrequest", "get-module",
+        "import-module", "write-host", "write-output", "read-host",
+        "get-member", "format-table", "format-list", "export-csv",
+        "import-csv", "get-computerinfo", "get-disk", "get-childitem",
+        "resolve-path", "join-path", "get-psdrive", "update-help",
+        "get-variable", "set-variable", "start-sleep", "convertto-json",
+        "convertfrom-json", "invoke-command", "enter-pssession",
+    },
+}
+
+
+def base_of(command: str, category: str) -> str:
+    """Normalized base command used for the essential check."""
+    cmd = command.strip().lower()
+    cmd = re.sub(r"^sudo\s+", "", cmd)
+    tokens = cmd.split()
+    if not tokens:
+        return ""
+    if category == "git" and tokens[0] == "git" and len(tokens) > 1:
+        return tokens[1].strip("-")
+    if category == "docker" and tokens[0] == "docker" and len(tokens) > 1:
+        if tokens[1] == "compose" and len(tokens) > 2:
+            return "compose"
+        return tokens[1].strip("-")
+    base = tokens[0].strip("`\"'")
+    if "/" in base:
+        base = base.rsplit("/", 1)[-1]
+    return base
+
+
+def level_of(command: str, category: str) -> int:
+    """Usefulness level: 1 Essential, 2 Common, 3 Advanced."""
+    cmd = command.strip()
+    # Concept-table rows ("Image", "Container", ...) are not commands:
+    # only real git/docker invocations can be essential.
+    if category == "git" and not cmd.lower().startswith("git "):
+        pass
+    elif category == "docker" and not cmd.lower().startswith("docker "):
+        pass
+    # Essential = a well-known base command, used plainly (short form).
+    elif base_of(cmd, category) in ESSENTIALS.get(category, set()) and len(cmd.split()) <= 3:
+        return LEVEL_ESSENTIAL
+    # Long or composed commands (pipes, chains, redirects, substitutions)
+    # are advanced, whatever their base command is.
+    if any(t in cmd for t in ("|", "&&", ";", "$(", "`", ">", "<")):
+        return LEVEL_ADVANCED
+    if len(cmd.split()) > 5:
+        return LEVEL_ADVANCED
+    if cmd[:1] in ("*", "[", "-"):
+        return LEVEL_ADVANCED
+    return LEVEL_COMMON
+
 
 def slugify(text: str) -> str:
     text = re.sub(r"[^\w\s-]", "", text.lower())
@@ -80,6 +175,8 @@ def parse_code_line(line: str) -> tuple[str, str] | None:
     """Return (command, description) for one code-block line, or None."""
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
+        return None
+    if stripped[0] in ("'", ">", "<", ")", "`", "-"):
         return None
     first = stripped.split(None, 1)[0].lower()
     if first in SHELL_KEYWORDS:
@@ -198,6 +295,14 @@ def main(argv: list[str]) -> int:
             kept += 1
         stats[name] = kept
         print(f"{name}: {len(raw)} parsed, {kept} kept")
+
+    for e in entries:
+        e["level"] = level_of(e["command"], e["category"])
+    from collections import Counter
+
+    dist = Counter((e["category"], e["level"]) for e in entries)
+    for cat in ("linux", "powershell", "docker", "git"):
+        print(f"{cat} levels: essential={dist[(cat, 1)]} common={dist[(cat, 2)]} advanced={dist[(cat, 3)]}")
 
     payload = {
         "version": 1,

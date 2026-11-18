@@ -4,10 +4,14 @@ Search your cheat sheets from the terminal. A fast, categorized SQLite
 database of commands with live suggestions while you type, a full-screen
 browser, and a small CLI for searching and editing.
 
-- **1400 commands** seeded from day one: Linux, PowerShell, Docker, Git
+- **1392 commands** seeded from day one: Linux, PowerShell, Docker, Git
 - **Live search** with full-text suggestions as you type
-- **Browse by category**, open any entry for the full detail
-- **Copy** any command to the clipboard with one key
+- **A real browser**: category sidebar, live results, and a detail pane
+  showing the selected command in full
+- **Copy** any command to the clipboard with one key (Enter)
+- **Filter by usefulness**: Essential, Common or Advanced — every command
+  is rated, so you can see only the ones that matter
+- **Favorites**: star the commands you use most, find them in one place
 - **Your own entries**: add, edit and delete; seed updates never touch them
 - **One static binary, one database file** (`cheats.db`), no install, no network
 
@@ -33,15 +37,26 @@ Run it with no arguments for the interactive browser:
 ./cheat-terminal
 ```
 
-Keys: type to search, Up/Down move, Tab switch category, Enter details,
-c copy command, q quit, Esc back, Ctrl+C quit.
+Keys:
+
+- Type to search, Up/Down move, Tab switch category
+- Enter copies the selected command to the clipboard
+- Esc switches to list mode (press again to go back to search)
+- In list mode: `c` copy, `s` star/unstar a favorite,
+  `f` filter by usefulness (All → Essential → Common → Advanced),
+  `/` back to search, `q` quit
+- `?` shows all shortcuts, Ctrl+C quits
 
 Or use it from the command line:
 
 ```sh
 ./cheat-terminal docker ps        # print matching entries
+./cheat-terminal docker ps --level essential   # only essential commands
 ./cheat-terminal --list           # categories with entry counts
 ./cheat-terminal --list docker    # all Docker entries
+./cheat-terminal --favorites      # your starred entries
+./cheat-terminal favorite 42      # star entry #42
+./cheat-terminal unfavorite 42    # unstar entry #42
 ./cheat-terminal add              # add your own entry (prompts)
 ./cheat-terminal edit 42          # edit entry #42
 ./cheat-terminal delete 42        # delete entry #42 (asks first)
@@ -54,8 +69,12 @@ Or use it from the command line:
 
 The first run creates `cheats.db` next to the binary (or in the user config
 directory when that folder is not writable) and fills it with the seed
-data: 1400 entries in 4 categories. Change the location with
+data: 1392 entries in 4 categories. Change the location with
 `--db <path>` or the `CHEAT_TERMINAL_DB` environment variable.
+
+Databases created by v1.0.0 upgrade themselves on the first v1.1.0 run:
+new columns are added and the seed levels are filled in. Your own entries
+and favorites are kept.
 
 ## Seed data
 
@@ -78,10 +97,9 @@ go test ./...   # unit tests (database, search, CRUD, import, TUI)
 go vet ./...    # static checks
 ```
 
-CI runs vet, tests, and cross-compiles Linux, Windows and macOS binaries.
-The workflow file ships as `ci.yml` in the repo root; move it to
-`.github/workflows/ci.yml` (the GitHub App used for pushes cannot create
-workflow files).
+CI runs vet, tests, and cross-compiles Linux, Windows and macOS binaries
+from `.github/workflows/ci.yml`. (The GitHub App used for pushes cannot
+create workflow files, so that file is managed on the website.)
 
 ## License
 

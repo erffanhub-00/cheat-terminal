@@ -19,7 +19,7 @@ import (
 )
 
 // version is the release version, shown by --version.
-const version = "1.0.0"
+const version = "1.1.0"
 
 func main() {
 	os.Exit(run(os.Args[1:]))
@@ -54,7 +54,7 @@ func run(args []string) int {
 			fmt.Fprintln(os.Stderr, "cheat-terminal: no terminal detected; use `cheat-terminal <query>` or --help")
 			return 1
 		}
-		p := tea.NewProgram(tui.New(store), tea.WithAltScreen())
+		p := tea.NewProgram(tui.New(store, version), tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "cheat-terminal: %v\n", err)
 			return 1

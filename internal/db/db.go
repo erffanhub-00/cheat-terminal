@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -73,8 +74,48 @@ type Entry struct {
 	Tags          string
 	Example       string
 	Source        string // "seed" or "user"
+	Level         int    // 1 Essential, 2 Common, 3 Advanced
+	Favorite      bool
 	CreatedAt     string
 	UpdatedAt     string
+}
+
+// Usefulness levels: the "how useful is this command" filter.
+const (
+	LevelAll       = 0
+	LevelEssential = 1
+	LevelCommon    = 2
+	LevelAdvanced  = 3
+)
+
+// LevelName returns the display name of a level ("" for All).
+func LevelName(level int) string {
+	switch level {
+	case LevelEssential:
+		return "Essential"
+	case LevelCommon:
+		return "Common"
+	case LevelAdvanced:
+		return "Advanced"
+	default:
+		return "All"
+	}
+}
+
+// ParseLevel parses a level name from the CLI ("essential", "common",
+// "advanced", "all", or 1/2/3).
+func ParseLevel(s string) (int, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "all":
+		return LevelAll, nil
+	case "essential", "1":
+		return LevelEssential, nil
+	case "common", "2":
+		return LevelCommon, nil
+	case "advanced", "3":
+		return LevelAdvanced, nil
+	}
+	return 0, fmt.Errorf("unknown level %q (use essential, common or advanced)", s)
 }
 
 // Category is one sidebar group with its entry count.
@@ -136,7 +177,49 @@ func Open(path string) (*Store, error) {
 		sqlDB.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
-	return &Store{db: sqlDB, path: path}, nil
+	s := &Store{db: sqlDB, path: path}
+	if err := s.migrate(); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("migrate schema: %w", err)
+	}
+	return s, nil
+}
+
+// migrate adds columns introduced after v1.0.0 to databases created by
+// older versions, so an existing cheats.db keeps working (and keeps the
+// user's entries) when the binary is replaced.
+func (s *Store) migrate() error {
+	rows, err := s.db.Query(`PRAGMA table_info(entries)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	cols := make(map[string]bool)
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull int
+		var dflt any
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		cols[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !cols["level"] {
+		if _, err := s.db.Exec(`ALTER TABLE entries ADD COLUMN level INTEGER NOT NULL DEFAULT 2`); err != nil {
+			return err
+		}
+	}
+	if !cols["favorite"] {
+		if _, err := s.db.Exec(`ALTER TABLE entries ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Close closes the database.
