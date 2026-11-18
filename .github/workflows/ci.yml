@@ -1,0 +1,33 @@
+# CI for cheat-terminal — this file lives at .github/workflows/ci.yml
+# (the GitHub App used for pushes cannot create workflow files,
+# so it is managed on the website.)
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Cross-compile
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/cheat-terminal-linux-amd64 .
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o dist/cheat-terminal-windows-amd64.exe .
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o dist/cheat-terminal-darwin-amd64 .
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o dist/cheat-terminal-darwin-arm64 .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: dist/
