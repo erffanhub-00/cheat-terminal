@@ -1,0 +1,7 @@
+# Runtime database and built binaries (never committed).
+cheats.db
+/cheat-terminal
+/cheat-terminal.exe
+/dist/
+*.test
+.DS_Store
