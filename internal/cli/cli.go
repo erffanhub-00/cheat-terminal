@@ -67,6 +67,10 @@ func Run(args []string, store *db.Store, version, dbPath string) int {
 		}
 		fmt.Printf("Imported %d new, updated %d seed entries from %s\n", ins, upd, args[1])
 		return 0
+	case "export":
+		return exportEntries(store, args[1:])
+	case "import":
+		return importEntries(store, args[1:])
 	case "add":
 		return addEntry(store, args[1:])
 	case "edit":
@@ -138,13 +142,24 @@ Usage:
   cheat-terminal edit <id>          Edit an entry (prompts, Enter keeps)
   cheat-terminal delete <id>        Delete an entry (asks first)
   cheat-terminal category add <name> [--title T]
+  cheat-terminal export [file] [--category C]
+                                    Export entries as seed-format JSON
+                                    (default file cheats-export.json)
+  cheat-terminal import <file> [--category C]
+                                    Import a seed-format JSON file: new
+                                    commands are added, existing ones are
+                                    updated only when the file has fuller
+                                    data; without --category each entry
+                                    goes to its own category
   cheat-terminal --import <dir>     Import *.json seed files from a directory
   cheat-terminal --db <path>        Use a different database file
   cheat-terminal --version          Print the version
 
 TUI keys: type to search, Up/Down move, Tab switch category,
 Enter copy command, s star favorite, f filter by usefulness,
-Esc list mode, ? help, q quit, Ctrl+C quit.
+E export entries to a file, I import entries from a file,
+Esc once switches to list mode (where the keys work), ? help,
+q quit, Ctrl+C quit.
 `)
 }
 
@@ -282,6 +297,69 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n-1] + "…"
+}
+
+// stripFlagPair removes a "--name value" pair from args and returns the
+// remaining args and the value ("" if absent).
+func stripFlagPair(args []string, name string) ([]string, string) {
+	var rest []string
+	value := ""
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--"+name && i+1 < len(args) {
+			value = args[i+1]
+			i++
+			continue
+		}
+		rest = append(rest, args[i])
+	}
+	return rest, value
+}
+
+// normalizeCategory lower-cases a category name so "Docker" matches the
+// existing "docker" category instead of creating a duplicate.
+func normalizeCategory(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func exportEntries(store *db.Store, args []string) int {
+	rest, cat := stripFlagPair(args, "category")
+	file := firstPositional(rest)
+	if file == "" {
+		file = "cheats-export.json"
+	}
+	n, err := store.ExportToFile(file, normalizeCategory(cat))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "export: %v\n", err)
+		return 1
+	}
+	if cat != "" {
+		fmt.Printf("Exported %d entries from category %q to %s\n", n, cat, file)
+	} else {
+		fmt.Printf("Exported %d entries to %s\n", n, file)
+	}
+	return 0
+}
+
+func importEntries(store *db.Store, args []string) int {
+	rest, cat := stripFlagPair(args, "category")
+	file := firstPositional(rest)
+	if file == "" {
+		fmt.Fprintln(os.Stderr, "usage: cheat-terminal import <file> [--category C]")
+		return 1
+	}
+	stats, err := store.ImportFile(file, normalizeCategory(cat))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "import: %v\n", err)
+		return 1
+	}
+	if cat != "" {
+		fmt.Printf("Imported %d new, %d updated, %d unchanged into category %q from %s\n",
+			stats.New, stats.Updated, stats.Unchanged, cat, file)
+	} else {
+		fmt.Printf("Imported %d new, %d updated, %d unchanged from %s\n",
+			stats.New, stats.Updated, stats.Unchanged, file)
+	}
+	return 0
 }
 
 // flags parses --name value pairs out of args.

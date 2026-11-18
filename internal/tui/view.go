@@ -25,7 +25,6 @@ var (
 	dimStyle         = lipgloss.NewStyle().Foreground(dimColor)
 	keyStyle         = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 	selectedStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Background(selBgColor).Bold(true)
-	selectedDimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#DBEAFE")).Background(selBgColor)
 	okStyle          = lipgloss.NewStyle().Foreground(okColor)
 	errStyle         = lipgloss.NewStyle().Foreground(errColor)
 	favStyle         = lipgloss.NewStyle().Foreground(favColor).Bold(true)
@@ -158,8 +157,28 @@ func (m Model) View() string {
 
 func (m Model) viewHeader() string {
 	left := headerTitleStyle.Render("cheat-terminal") + dimStyle.Render(" v"+m.version)
-	right := dimStyle.Render(fmt.Sprintf("%d entries", m.total))
-	if chip := levelChip(m.level); chip != "" {
+	rightText := fmt.Sprintf("%d entries", m.total)
+	// At 60 columns or less the sidebar is hidden, so the header
+	// carries the active category name instead.
+	if m.width <= 60 && m.activeSide >= 0 && m.activeSide < len(m.sides) {
+		rightText = m.sides[m.activeSide].title + " · " + rightText
+	}
+	chip := levelChip(m.level)
+	rightW := runeLen(rightText)
+	if chip != "" {
+		rightW += 2 + lipgloss.Width(chip)
+	}
+	// Shrink the right side (dropping the chip first) until it fits.
+	avail := m.width - lipgloss.Width(left) - 1
+	if rightW > avail {
+		chip = ""
+		rightW = runeLen(rightText)
+	}
+	if rightW > avail && avail > 4 {
+		rightText = truncate(rightText, avail)
+	}
+	right := dimStyle.Render(rightText)
+	if chip != "" {
 		right += "  " + chip
 	}
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
@@ -183,6 +202,11 @@ func (m Model) viewSearchBox() string {
 
 // layout returns sidebar, detail and list widths (totals, borders included).
 func (m Model) layout() (sidebarW, detailW, listW int) {
+	// At 60 columns or less there is no room for a sidebar: the list takes
+	// the whole width and the header shows the active category.
+	if m.width <= 60 {
+		return 0, 0, m.width
+	}
 	sidebarW = 24
 	detailW = 0
 	switch {
@@ -209,8 +233,11 @@ func (m Model) layout() (sidebarW, detailW, listW int) {
 func (m Model) viewBody() string {
 	sidebarW, detailW, listW := m.layout()
 	bodyH := m.bodyHeight()
-	sidebar := m.viewSidebar(sidebarW-2, bodyH-2)
 	list := m.viewList(listW, bodyH)
+	if sidebarW == 0 {
+		return list
+	}
+	sidebar := m.viewSidebar(sidebarW-2, bodyH-2)
 	if detailW == 0 {
 		return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, " ", list)
 	}
@@ -279,9 +306,9 @@ func (m Model) viewList(listW, bodyH int) string {
 	return strings.Join(lines[:bodyH], "\n")
 }
 
-// viewRowLines renders one entry as two lines plus a blank separator:
-// line 1 is the level dot, the bold command and a star for favorites;
-// line 2 is the dim description, indented under the command.
+// viewRowLines renders one entry as a single line plus a blank
+// separator: the level dot, the bold command and a star for favorites.
+// The description is not shown here; it lives in the detail pane.
 func (m Model) viewRowLines(e db.Entry, selected bool, listW int) []string {
 	star := ""
 	if e.Favorite {
@@ -297,13 +324,7 @@ func (m Model) viewRowLines(e db.Entry, selected bool, listW int) []string {
 	} else {
 		line1 = " " + line1
 	}
-	desc := truncate(strings.TrimSpace(e.Description), max(1, listW-4))
-	if selected {
-		// No inner dim style here: the outer style colors the whole
-		// line light-on-blue so the row reads as one block.
-		return []string{line1, selectedDimStyle.Width(listW).Render("   " + desc), ""}
-	}
-	return []string{line1, "   " + dimStyle.Render(desc), ""}
+	return []string{line1, ""}
 }
 
 // viewDetail renders the detail pane for the selected entry.
@@ -369,19 +390,22 @@ type keyHint struct {
 }
 
 // footerHints is the main key list. In list mode every key works; in
-// search mode Esc switches to list mode, where they all become available.
+// search mode typing goes to the search box, so the footer first says
+// the keys need Esc once — that is the line the user actually reads.
 func footerHints(listMode bool) []keyHint {
 	if listMode {
 		return []keyHint{
 			{"Enter", "copy"}, {"/", "search"}, {"f", "filter"},
 			{"s", "favorite"}, {"a", "add"}, {"C", "category"},
-			{"d", "delete"}, {"?", "help"}, {"q", "quit"},
+			{"d", "delete"}, {"E", "export"}, {"I", "import"},
+			{"?", "help"}, {"q", "quit"},
 		}
 	}
 	return []keyHint{
-		{"Enter", "copy"}, {"Esc", "list"}, {"f", "filter"},
-		{"s", "favorite"}, {"a", "add"}, {"C", "category"},
-		{"d", "delete"}, {"?", "help"}, {"Ctrl+C", "quit"},
+		{"Esc", "once → keys work"}, {"Enter", "copy"}, {"Esc", "list"},
+		{"f", "filter"}, {"s", "favorite"}, {"a", "add"},
+		{"C", "category"}, {"d", "delete"}, {"E", "export"},
+		{"I", "import"}, {"?", "help"}, {"Ctrl+C", "quit"},
 	}
 }
 
@@ -391,13 +415,14 @@ func footerHintsShort(listMode bool) []keyHint {
 		return []keyHint{
 			{"⏎", "copy"}, {"/", "search"}, {"f", "filter"},
 			{"s", "fav"}, {"a", "add"}, {"C", "cat"},
-			{"d", "del"}, {"?", "help"}, {"q", "quit"},
+			{"d", "del"}, {"E", "exp"}, {"I", "imp"},
+			{"?", "help"}, {"q", "quit"},
 		}
 	}
 	return []keyHint{
-		{"⏎", "copy"}, {"Esc", "list"}, {"f", "filter"},
-		{"s", "fav"}, {"a", "add"}, {"C", "cat"},
-		{"d", "del"}, {"?", "help"},
+		{"Esc", "once → keys"}, {"⏎", "copy"}, {"Esc", "list"},
+		{"f", "filter"}, {"s", "fav"}, {"a", "add"}, {"C", "cat"},
+		{"d", "del"}, {"E", "exp"}, {"I", "imp"}, {"?", "help"},
 	}
 }
 
@@ -428,7 +453,13 @@ func (m Model) viewFooter() string {
 	footer := rendered
 	if width > avail {
 		// Very narrow terminal: fall back to a plain truncated line.
-		footer = dimStyle.Render(truncate("Enter copy · Esc list · ? help · q quit", avail))
+		// It still carries the Esc note in search mode, and the
+		// export/import keys in list mode.
+		fallback := "Enter copy · E export · I import · a add · ? help · q quit"
+		if m.focus != focusList {
+			fallback = "Esc once → keys work · Enter copy · ? help"
+		}
+		footer = dimStyle.Render(truncate(fallback, avail))
 	}
 	footer += "\n"
 	if m.status != "" {
@@ -452,27 +483,44 @@ func (m Model) viewFooter() string {
 
 func (m Model) viewHelp() string {
 	// Kept short on purpose: the box (border + padding included) must
-	// fit in a 24-row terminal, or its top lines scroll off.
-	lines := []string{
-		headerTitleStyle.Render("cheat-terminal — Keyboard shortcuts"),
+	// fit in a 24-row terminal, or its top lines scroll off. Lines are
+	// truncated to the terminal width so narrow screens stay readable.
+	plain := []string{
+		"cheat-terminal — Keyboard shortcuts",
 		"",
-		titleStyle.Render("SEARCH — type to filter"),
-		"  ↑↓ move · Tab category · Enter copy",
-		"  Esc clear, then list mode · ? help · Ctrl+C quit",
+		"MODES — SEARCH: typing goes to the search box.",
+		"  Press Esc once to switch to list mode, where keys work.",
+		"  LIST: single keys work directly. Esc or / back to search.",
 		"",
-		titleStyle.Render("LIST (Esc from search)"),
-		"  ↑↓ j k move · Enter / c copy · s favorite · f filter",
-		"  a Add a new entry · C Add a new category",
-		"  d Delete the selected entry · / search · q quit",
+		"SEARCH — ↑↓ move · Tab category · Enter copy",
+		"  Esc clears the query, then list mode · Ctrl+C quit",
 		"",
-		titleStyle.Render("ADD ENTRY (a) — Enter next step, Esc cancel"),
-		"  Command → Description → Category → Tags → Level",
-		"  Category: existing name, or a new name creates it",
-		"  Level: 1 Essential, 2 Common, 3 Advanced (empty = Common)",
+		"LIST — ↑↓ j k move · Enter / c copy · s favorite · f filter",
+		"  a add · C category · d delete · E export · I import · q quit",
 		"",
-		titleStyle.Render("DELETE (d) — y deletes, n / Esc keeps it"),
+		"ADD (a) — Command → Description → Category → Tags → Level",
+		"  New category name creates it · Level 1/2/3 (empty = 2)",
+		"IMPORT (I) — file path, then category (empty = from file)",
+		"DELETE (d) — y deletes, n / Esc keeps it",
 		"",
-		dimStyle.Render("Esc / ? closes this help."),
+		"Esc / ? closes this help.",
+	}
+	headers := map[int]bool{2: true, 6: true, 9: true, 12: true}
+	// Truncate to the terminal width (box border + padding take 6).
+	maxW := max(10, m.width-10)
+	var lines []string
+	for i, p := range plain {
+		p = truncate(p, maxW)
+		switch {
+		case i == 0:
+			lines = append(lines, headerTitleStyle.Render(p))
+		case headers[i]:
+			lines = append(lines, titleStyle.Render(p))
+		case i == len(plain)-1:
+			lines = append(lines, dimStyle.Render(p))
+		default:
+			lines = append(lines, p)
+		}
 	}
 	// Safety net for very short terminals: never render taller than the
 	// screen, even if a future edit adds lines.
@@ -488,7 +536,8 @@ func (m Model) viewHelp() string {
 }
 
 // viewPrompt renders the open prompt overlay: the add-entry form, the
-// add-category prompt, or the delete confirmation.
+// add-category prompt, the delete confirmation, or the export/import
+// prompts.
 func (m Model) viewPrompt() string {
 	switch m.prompt {
 	case promptAdd:
@@ -497,6 +546,10 @@ func (m Model) viewPrompt() string {
 		return m.viewCategoryForm()
 	case promptDelete:
 		return m.viewDeleteConfirm()
+	case promptExport:
+		return m.viewExportForm()
+	case promptImport:
+		return m.viewImportForm()
 	}
 	return ""
 }
@@ -547,8 +600,8 @@ func (m Model) viewAddForm() string {
 	}
 	lines = append(lines, "")
 	lines = append(lines, m.formInput.View())
-	if m.addErr != "" {
-		lines = append(lines, errStyle.Render(truncate(m.addErr, w)))
+	if m.formErr != "" {
+		lines = append(lines, errStyle.Render(truncate(m.formErr, w)))
 	}
 	lines = append(lines, "")
 	lines = append(lines, dimStyle.Render("Enter next step · Esc cancel"))
@@ -595,6 +648,53 @@ func (m Model) viewDeleteConfirm() string {
 		lines = append(lines, "")
 	}
 	lines = append(lines, dimStyle.Render("Press y to delete, n or Esc to keep it."))
+	return m.promptBox(lines)
+}
+
+func (m Model) viewExportForm() string {
+	w := m.promptWidth()
+	lines := []string{
+		headerTitleStyle.Render("Export entries"),
+		"",
+		dimStyle.Render(truncate("Writes all entries as a JSON file (seed format).", w)),
+		dimStyle.Render(truncate("Give it to an AI to enrich, then import it back.", w)),
+		"",
+		m.formInput.View(),
+		"",
+		dimStyle.Render("Enter export · Esc cancel"),
+	}
+	return m.promptBox(lines)
+}
+
+func (m Model) viewImportForm() string {
+	w := m.promptWidth()
+	var title, hint string
+	if m.importStep == 0 {
+		title = "Import entries — step 1 of 2: File"
+		hint = "Path to a JSON file in seed format."
+	} else {
+		title = "Import entries — step 2 of 2: Category"
+		hint = "New or existing name — empty uses the file's categories."
+	}
+	lines := []string{
+		headerTitleStyle.Render(title),
+		"",
+		dimStyle.Render(truncate(hint, w)),
+	}
+	if m.importStep == 1 {
+		lines = append(lines, dimStyle.Render(truncate("Existing: "+m.categoryTitles(), w)))
+	}
+	lines = append(lines, "")
+	lines = append(lines, m.formInput.View())
+	if m.formErr != "" {
+		lines = append(lines, errStyle.Render(truncate(m.formErr, w)))
+	}
+	lines = append(lines, "")
+	if m.importStep == 0 {
+		lines = append(lines, dimStyle.Render("Enter next step · Esc cancel"))
+	} else {
+		lines = append(lines, dimStyle.Render("Enter import · Esc cancel"))
+	}
 	return m.promptBox(lines)
 }
 

@@ -7,15 +7,24 @@ browser, and a small CLI for searching and editing.
 - **1392 commands** seeded from day one: Linux, PowerShell, Docker, Git
 - **Live search** with full-text suggestions as you type
 - **A real browser**: category sidebar, live results, and a detail pane
-  showing the selected command in full — two-line rows with room to
-  breathe, and every category in its own color
-- **Copy** any command to the clipboard with one key (Enter)
+  showing the selected command in full — roomy single-line rows with a
+  blank line between them, and every category in its own color. The
+  layout adapts to any terminal size (60×20 to 160×40); on narrow
+  screens the sidebar hides and the header shows the active category
+- **Copy** any command to the clipboard with one key (Enter). In search
+  mode, press Esc once first — the footer says so
 - **Filter by usefulness**: Essential, Common or Advanced — every command
   is rated, so you can see only the ones that matter
 - **Favorites**: star the commands you use most, find them in one place
 - **Your own entries**: add them inside the browser with `a` (step by
   step), make your own categories with `C`, delete with `d`; edit and
   delete from the CLI too. Seed updates never touch them
+- **Export & import**: `E` writes all entries as a JSON file (the seed
+  format) — give it to an AI to enrich descriptions and add missing
+  commands — and `I` imports it back into a new category or an existing
+  one. Existing commands are only updated when the file has fuller data
+  (longer description, tags, level); the import reports new / updated /
+  unchanged counts
 - **One static binary, one database file** (`cheats.db`), no install, no network
 
 ## Install
@@ -44,14 +53,21 @@ Keys:
 
 - Type to search, Up/Down move, Tab switch category
 - Enter copies the selected command to the clipboard
-- Esc switches to list mode (press again to go back to search)
+- Esc switches to list mode: in search mode typing goes to the search
+  box, so press Esc once first — then all keys work (the footer says so)
 - In list mode: `c` copy, `s` star/unstar a favorite,
   `f` filter by usefulness (All → Essential → Common → Advanced),
   `a` add a new entry (Command → Description → Category → Tags → Level;
   typing a new category name creates it),
   `C` add a new category, `d` delete the selected entry (asks first),
-  `/` back to search, `q` quit
+  `E` export all entries to a JSON file, `I` import entries from a
+  JSON file (file path, then category — empty means the file's
+  categories), `/` back to search, `q` quit
 - `?` shows all shortcuts, Ctrl+C quits
+
+The browser runs full-screen (it takes over the terminal; on exit your
+shell screen comes back) and adapts to the terminal size, from 60×20
+to 160×40 and beyond.
 
 Or use it from the command line:
 
@@ -67,6 +83,10 @@ Or use it from the command line:
 ./cheat-terminal edit 42          # edit entry #42
 ./cheat-terminal delete 42        # delete entry #42 (asks first)
 ./cheat-terminal category add kubernetes
+./cheat-terminal export           # export all entries to cheats-export.json
+./cheat-terminal export my.json --category docker
+./cheat-terminal import my.json   # import, new / updated / unchanged counts
+./cheat-terminal import my.json --category kubernetes
 ./cheat-terminal --import data/   # import seed JSON files
 ./cheat-terminal --help           # everything
 ```
@@ -80,8 +100,8 @@ data: 1392 entries in 4 categories. Change the location with
 
 Databases created by v1.0.0 upgrade themselves on the first v1.1.0 run:
 new columns are added and the seed levels are filled in. Your own entries
-and favorites are kept. v1.2.0 needs no database changes: a v1.1.0
-`cheats.db` just works, and your entries and categories are kept.
+and favorites are kept. v1.2.0 and v1.3.0 need no database changes: a
+v1.1.0 `cheats.db` just works, and your entries and categories are kept.
 
 ## Seed data
 

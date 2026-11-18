@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -289,7 +292,7 @@ func TestTUIAddEntryFlow(t *testing.T) {
 	if m.prompt != promptAdd || m.addStep != 4 {
 		t.Fatalf("bad level left the form: prompt %d step %d", m.prompt, m.addStep)
 	}
-	if m.addErr == "" {
+	if m.formErr == "" {
 		t.Fatalf("bad level did not set an inline error")
 	}
 	m = update(m, keyMsg("enter")) // empty now? No: input still has "bogus".
@@ -479,65 +482,261 @@ func firstRunes(s string, n int) string {
 	return string(r[:n])
 }
 
-func TestTUITwoLineRows(t *testing.T) {
+func TestTUISingleLineRows(t *testing.T) {
 	m := New(openSeededStore(t), "test")
-	// Two-line rows take 3 lines each, so fewer rows fit per page.
+	// Single-line rows take 2 lines each (command + blank separator),
+	// so more rows fit per page than the old two-line layout.
 	m = update(m, tea.WindowSizeMsg{Width: 120, Height: 30})
-	if v := m.visibleRows(); v != 8 {
-		t.Fatalf("visible rows at 120x30 = %d, want 8", v)
+	if v := m.visibleRows(); v != 12 {
+		t.Fatalf("visible rows at 120x30 = %d, want 12", v)
 	}
 	m = update(m, tea.WindowSizeMsg{Width: 80, Height: 24})
-	if v := m.visibleRows(); v != 6 {
-		t.Fatalf("visible rows at 80x24 = %d, want 6", v)
+	if v := m.visibleRows(); v != 9 {
+		t.Fatalf("visible rows at 80x24 = %d, want 9", v)
 	}
 	// Check the list column itself (the full view joins the sidebar
 	// next to it, so its lines are never blank).
 	_, _, listW := m.layout()
 	lines := strings.Split(m.viewList(listW, m.bodyHeight()), "\n")
-	// Find a visible entry with a description and check its command and
-	// description sit on two adjacent lines, with a blank line after.
-	checked := false
+	// Find a visible entry with a description: its command line is
+	// followed by a blank line, and its description is nowhere in the
+	// list — it lives in the detail pane.
+	checkedIdx := -1
 	for i := 0; i < m.visibleRows() && i < len(m.results); i++ {
 		e := m.results[i]
 		if strings.TrimSpace(e.Description) == "" {
 			continue
 		}
-		// Scan for the command line whose next line holds the description.
 		cmdIdx := -1
-		for j := 0; j+1 < len(lines); j++ {
-			if strings.Contains(lines[j], e.Command) &&
-				strings.Contains(lines[j+1], firstRunes(e.Description, 20)) {
+		for j := 0; j < len(lines); j++ {
+			if strings.Contains(lines[j], e.Command) {
 				cmdIdx = j
 				break
 			}
 		}
 		if cmdIdx < 0 {
-			t.Fatalf("no two-line row found for %q", e.Command)
+			t.Fatalf("command %q not in list lines", e.Command)
 		}
-		if cmdIdx+2 >= len(lines) || lines[cmdIdx+2] != "" {
-			t.Fatalf("no blank line after the row: %q", lines[cmdIdx+2])
+		if cmdIdx+1 >= len(lines) || lines[cmdIdx+1] != "" {
+			t.Fatalf("no blank line after the row")
 		}
-		checked = true
+		for _, ln := range lines {
+			if strings.Contains(ln, firstRunes(e.Description, 20)) {
+				t.Fatalf("description leaked into the list: %q", ln)
+			}
+		}
+		checkedIdx = i
 		break
 	}
-	if !checked {
+	if checkedIdx < 0 {
 		t.Fatalf("no visible entry with a description to check")
 	}
+	// ...but the detail pane (wide terminal) still shows it.
+	m.cursor = checkedIdx
+	m = update(m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	e := m.results[checkedIdx]
+	if !strings.Contains(m.View(), firstRunes(e.Description, 20)) {
+		t.Fatalf("detail pane does not show the description")
+	}
 }
+
 func TestTUIViewFitsTerminal(t *testing.T) {
 	m := New(openSeededStore(t), "test")
-	m = update(m, tea.WindowSizeMsg{Width: 120, Height: 30})
-	if n := len(strings.Split(m.View(), "\n")); n != 30 {
-		t.Fatalf("view lines = %d, want 30", n)
+	// The view must be exactly the terminal height at every size the
+	// program supports, from a small 60x20 window to a large 160x40 one.
+	for _, size := range [][2]int{{60, 20}, {80, 24}, {100, 30}, {120, 30}, {160, 40}} {
+		m = update(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		if n := len(strings.Split(m.View(), "\n")); n != size[1] {
+			t.Fatalf("view lines = %d at %dx%d, want %d", n, size[0], size[1], size[1])
+		}
 	}
+	// Moving the cursor must never change the height, at any size.
+	m = update(m, tea.WindowSizeMsg{Width: 120, Height: 30})
 	for i := 0; i < 60; i++ {
 		m = update(m, keyMsg("down"))
 		if n := len(strings.Split(m.View(), "\n")); n != 30 {
 			t.Fatalf("view lines = %d at cursor %d, want 30", n, m.cursor)
 		}
 	}
+	m = update(m, tea.WindowSizeMsg{Width: 60, Height: 20})
+	for i := 0; i < 30; i++ {
+		m = update(m, keyMsg("down"))
+		if n := len(strings.Split(m.View(), "\n")); n != 20 {
+			t.Fatalf("view lines = %d at 60x20 cursor %d, want 20", n, m.cursor)
+		}
+	}
+	// Below 60 columns the sidebar is hidden and the header carries
+	// the active category instead.
+	m = update(m, tea.WindowSizeMsg{Width: 60, Height: 20})
+	if strings.Contains(m.View(), "Categories") {
+		t.Fatalf("sidebar shown below 60 columns")
+	}
+	if !strings.Contains(m.View(), "All · 1392 entries") {
+		t.Fatalf("header does not show the category below 60 columns")
+	}
+	// Below 90 columns the detail pane is hidden; the sidebar stays.
 	m = update(m, tea.WindowSizeMsg{Width: 80, Height: 24})
-	if n := len(strings.Split(m.View(), "\n")); n != 24 {
-		t.Fatalf("narrow view lines = %d, want 24", n)
+	if strings.Contains(m.View(), "Details") {
+		t.Fatalf("detail pane shown below 90 columns")
+	}
+	if !strings.Contains(m.View(), "Categories") {
+		t.Fatalf("sidebar hidden at 80 columns")
+	}
+}
+
+func TestTUISearchFooterEscNote(t *testing.T) {
+	m := New(openSeededStore(t), "test")
+	// Search mode (the default): the footer says keys need Esc first.
+	if !strings.Contains(m.View(), "once → keys work") {
+		t.Fatalf("search footer does not carry the Esc note")
+	}
+	// List mode: the note is gone, the full key list (with E/I) is there.
+	m = toList(m)
+	if strings.Contains(m.View(), "once → keys work") {
+		t.Fatalf("list footer still carries the Esc note")
+	}
+	for _, want := range []string{"export", "import"} {
+		if !strings.Contains(m.View(), want) {
+			t.Fatalf("list footer missing %q", want)
+		}
+	}
+	// The help overlay explains the two modes.
+	m = update(m, keyMsg("?"))
+	if !strings.Contains(m.View(), "MODES") {
+		t.Fatalf("help does not explain the modes")
+	}
+	if !strings.Contains(m.View(), "Press Esc once") {
+		t.Fatalf("help does not say Esc once switches to list mode")
+	}
+}
+
+func TestTUIExportFlow(t *testing.T) {
+	s := openSeededStore(t)
+	m := New(s, "test")
+	m = toList(m)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.json")
+	// 'E' opens the export prompt.
+	m = update(m, keyMsg("E"))
+	if m.prompt != promptExport {
+		t.Fatalf("E did not open the export prompt: %d", m.prompt)
+	}
+	if !strings.Contains(m.View(), "Export entries") {
+		t.Fatalf("export prompt view missing")
+	}
+	// Esc cancels without writing anything.
+	m = update(m, keyMsg("esc"))
+	if m.prompt != promptNone {
+		t.Fatalf("Esc did not cancel the export prompt")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("cancelled export wrote a file")
+	}
+	// Type the path and export.
+	m = update(m, keyMsg("E"))
+	m = typeText(m, path)
+	m = update(m, keyMsg("enter"))
+	if m.prompt != promptNone {
+		t.Fatalf("export prompt did not close after Enter")
+	}
+	if !strings.Contains(m.status, "Exported 1392 entries") {
+		t.Fatalf("export status = %q", m.status)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("export file not written: %v", err)
+	}
+	var seed db.SeedFile
+	if err := json.Unmarshal(raw, &seed); err != nil {
+		t.Fatalf("export file is not valid JSON: %v", err)
+	}
+	if len(seed.Entries) != 1392 {
+		t.Fatalf("export file has %d entries, want 1392", len(seed.Entries))
+	}
+}
+
+func TestTUIImportFlow(t *testing.T) {
+	s := openSeededStore(t)
+	m := New(s, "test")
+	m = toList(m)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "in.json")
+	// One new entry in a new category, plus a fuller description for
+	// an existing docker command.
+	docker, err := s.Search("", "docker", 0, 1)
+	if err != nil || len(docker) == 0 {
+		t.Fatalf("no docker entry to enrich: %v", err)
+	}
+	ex := docker[0]
+	content := fmt.Sprintf(`{"version": 1,
+		"categories": [{"name": "kubernetes", "title": "Kubernetes"}],
+		"entries": [
+			{"category": "kubernetes", "command": "kubectl get pods", "description": "List pods", "level": 1},
+			{"category": "docker", "command": %q, "description": %q, "level": 1}]}`,
+		ex.Command, ex.Description+" — enriched with more detail here")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write import file: %v", err)
+	}
+	// 'I' opens the import prompt at step 1 (file path).
+	m = update(m, keyMsg("I"))
+	if m.prompt != promptImport || m.importStep != 0 {
+		t.Fatalf("I did not open the import prompt: %d step %d", m.prompt, m.importStep)
+	}
+	// An empty file path sets an inline error and stays on step 1.
+	m = update(m, keyMsg("enter"))
+	if m.prompt != promptImport || m.importStep != 0 {
+		t.Fatalf("empty file path left the import prompt")
+	}
+	if m.formErr == "" {
+		t.Fatalf("empty file path did not set an inline error")
+	}
+	// Esc cancels.
+	m = update(m, keyMsg("esc"))
+	if m.prompt != promptNone {
+		t.Fatalf("Esc did not cancel the import prompt")
+	}
+	// Full flow: file path, then empty category (use the file's).
+	m = update(m, keyMsg("I"))
+	m = typeText(m, path)
+	m = update(m, keyMsg("enter"))
+	if m.prompt != promptImport || m.importStep != 1 {
+		t.Fatalf("after file path, step = %d, want 1", m.importStep)
+	}
+	if !strings.Contains(m.View(), "Existing:") {
+		t.Fatalf("category step does not list existing categories")
+	}
+	m = update(m, keyMsg("enter")) // empty category -> from the file
+	if m.prompt != promptNone {
+		t.Fatalf("import prompt did not close after Enter")
+	}
+	if !strings.Contains(m.status, "Imported 1 new, 1 updated, 0 unchanged") {
+		t.Fatalf("import status = %q", m.status)
+	}
+	// The new entry and category exist; the docker description grew.
+	found, _ := s.Search("kubectl get pods", "", 0, 0)
+	if len(found) != 1 || found[0].Category != "kubernetes" {
+		t.Fatalf("imported entry wrong: %+v", found)
+	}
+	after, err := s.GetEntry(ex.ID)
+	if err != nil {
+		t.Fatalf("GetEntry: %v", err)
+	}
+	if after.Description != ex.Description+" — enriched with more detail here" {
+		t.Fatalf("description not enriched: %q", after.Description)
+	}
+	// The sidebar shows the new category.
+	if !m.selectCategoryByName("kubernetes") {
+		t.Fatalf("kubernetes not in sidebar after import")
+	}
+	// A missing file reports an error toast and stays in the list.
+	m = update(m, keyMsg("I"))
+	m = typeText(m, filepath.Join(dir, "missing.json"))
+	m = update(m, keyMsg("enter"))
+	m = update(m, keyMsg("enter")) // empty category
+	if m.prompt != promptNone {
+		t.Fatalf("missing-file import did not close the prompt")
+	}
+	if !strings.Contains(m.status, "Import failed") {
+		t.Fatalf("missing-file status = %q", m.status)
 	}
 }

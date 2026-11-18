@@ -7,15 +7,19 @@
 //
 //	Search mode (default): type to search, Up/Down move, Tab switch
 //	  category, Enter copy, Esc clear/switch to list, ? help, Ctrl+C quit.
+//	  Keys only work after Esc switches to list mode: in search mode
+//	  typing goes into the search box.
 //	List mode (Esc from search): Up/Down or j/k move, Enter/c copy,
 //	  s star or unstar a favorite, f filter by usefulness level,
 //	  a add an entry, C add a category, d delete an entry,
+//	  E export entries to a file, I import entries from a file,
 //	  / back to search, q quit.
-//	Prompts (add entry, add category, delete): Enter confirms each step,
-//	  Esc cancels, y/n answers the delete question.
+//	Prompts (add entry, add category, delete, export, import): Enter
+//	  confirms each step, Esc cancels, y/n answers the delete question.
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -58,6 +62,8 @@ const (
 	promptAdd                 // sequential add-entry form, one field per step
 	promptCategory            // single-field add-category prompt
 	promptDelete              // y/n delete confirmation
+	promptExport              // single-field export filename prompt
+	promptImport              // two-step import: file path, then category
 )
 
 // addSteps is the number of steps in the add-entry form.
@@ -112,9 +118,14 @@ type Model struct {
 	addDesc string
 	addCat  string
 	addTags string
-	// addErr is an inline error shown inside the add form (e.g. a bad
-	// level), without closing the form.
-	addErr string
+	// formErr is an inline error shown inside a prompt (e.g. a bad
+	// level, an empty file path), without closing the prompt.
+	formErr string
+	// importStep is the current step of the import prompt (0 = file
+	// path, 1 = target category), and importFile holds the path typed
+	// in step 0.
+	importStep int
+	importFile string
 }
 
 // New builds the model and loads the first page of results.
@@ -239,10 +250,11 @@ func (m *Model) searchFavorites() ([]db.Entry, error) {
 	return out, nil
 }
 
-// rowHeight is how many terminal lines one result takes: two content
-// lines (command, then description) plus a blank line between rows, so
-// the list breathes instead of packing every command together.
-const rowHeight = 3
+// rowHeight is how many terminal lines one result takes: one content
+// line (the command) plus a blank line between rows, so the list
+// breathes instead of packing every command together. The description
+// is not shown here; it lives in the detail pane.
+const rowHeight = 2
 
 // visibleRows is how many result rows fit in the list column.
 func (m *Model) visibleRows() int {
@@ -393,7 +405,7 @@ func (m *Model) openAddForm() tea.Cmd {
 	m.prompt = promptAdd
 	m.addStep = 0
 	m.addCmd, m.addDesc, m.addCat, m.addTags = "", "", "", ""
-	m.addErr = ""
+	m.formErr = ""
 	m.formInput = m.newFormInput("Command, e.g. docker ps -a")
 	m.status = ""
 	return textinput.Blink
@@ -402,7 +414,7 @@ func (m *Model) openAddForm() tea.Cmd {
 // openCategoryForm starts the single-field add-category prompt.
 func (m *Model) openCategoryForm() tea.Cmd {
 	m.prompt = promptCategory
-	m.addErr = ""
+	m.formErr = ""
 	m.formInput = m.newFormInput("Category name, e.g. kubernetes")
 	m.status = ""
 	return textinput.Blink
@@ -417,10 +429,78 @@ func (m *Model) openDeleteConfirm() {
 	m.status = ""
 }
 
+// openExportForm starts the export filename prompt (list mode only).
+func (m *Model) openExportForm() tea.Cmd {
+	m.prompt = promptExport
+	m.formErr = ""
+	m.formInput = m.newFormInput("cheats-export.json")
+	m.status = ""
+	return textinput.Blink
+}
+
+// openImportForm starts the two-step import prompt (list mode only).
+func (m *Model) openImportForm() tea.Cmd {
+	m.prompt = promptImport
+	m.importStep = 0
+	m.importFile = ""
+	m.formErr = ""
+	m.formInput = m.newFormInput("File path, e.g. cheats-export.json")
+	m.status = ""
+	return textinput.Blink
+}
+
+// runExport writes all entries to the typed file (default name when the
+// field is empty) and reports how many were written.
+func (m *Model) runExport() tea.Cmd {
+	path := strings.TrimSpace(m.formInput.Value())
+	if path == "" {
+		path = "cheats-export.json"
+	}
+	n, err := m.store.ExportToFile(path, "")
+	m.cancelPrompt()
+	if err != nil {
+		return m.toast("Export failed: "+err.Error(), true)
+	}
+	return m.toast(fmt.Sprintf("Exported %d entries to %s", n, path), false)
+}
+
+// advanceImport moves the import prompt one step forward, running the
+// import on the last step.
+func (m *Model) advanceImport() tea.Cmd {
+	v := strings.TrimSpace(m.formInput.Value())
+	if m.importStep == 0 {
+		if v == "" {
+			m.formErr = "File path is empty"
+			return nil
+		}
+		m.importFile = v
+		m.importStep = 1
+		m.formErr = ""
+		m.formInput = m.newFormInput("Category (empty = use the file's categories)")
+		return textinput.Blink
+	}
+	// Step 1: the target category. Empty means the file's categories.
+	cat := normalizeCategoryName(v)
+	stats, err := m.store.ImportFile(m.importFile, cat)
+	m.cancelPrompt()
+	if err != nil {
+		return m.toast("Import failed: "+err.Error(), true)
+	}
+	// The import may have added categories: clear the search, rebuild
+	// the sidebar and show the new entries.
+	m.input.SetValue("")
+	m.reload()
+	m.search()
+	return m.toast(fmt.Sprintf("Imported %d new, %d updated, %d unchanged",
+		stats.New, stats.Updated, stats.Unchanged), false)
+}
+
 // cancelPrompt closes any open prompt and discards what it collected.
 func (m *Model) cancelPrompt() {
 	m.prompt = promptNone
-	m.addErr = ""
+	m.formErr = ""
+	m.importStep = 0
+	m.importFile = ""
 	m.formInput.Blur()
 }
 
@@ -499,27 +579,27 @@ func (m *Model) advanceAdd() tea.Cmd {
 		}
 		m.addCmd = v
 		m.addStep = 1
-		m.addErr = ""
+		m.formErr = ""
 		m.formInput = m.newFormInput("Description (optional)")
 	case 1: // Description (optional).
 		m.addDesc = v
 		m.addStep = 2
-		m.addErr = ""
+		m.formErr = ""
 		m.formInput = m.newFormInput("Linux, Docker, Git, PowerShell or a new name")
 	case 2: // Category (existing name, or a new one to create).
 		m.addCat = normalizeCategoryName(v)
 		m.addStep = 3
-		m.addErr = ""
+		m.formErr = ""
 		m.formInput = m.newFormInput("Tags, comma separated (optional)")
 	case 3: // Tags (optional).
 		m.addTags = v
 		m.addStep = 4
-		m.addErr = ""
+		m.formErr = ""
 		m.formInput = m.newFormInput("Level: 1 Essential, 2 Common, 3 Advanced")
 	default: // Level, then save.
 		level, err := parseLevelInput(v)
 		if err != nil {
-			m.addErr = err.Error()
+			m.formErr = err.Error()
 			return nil
 		}
 		return m.saveAdd(level)
@@ -628,6 +708,22 @@ func (m Model) updatePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "enter":
 			return m, m.saveCategory()
+		}
+	case promptExport:
+		switch msg.String() {
+		case "esc":
+			m.cancelPrompt()
+			return m, nil
+		case "enter":
+			return m, m.runExport()
+		}
+	case promptImport:
+		switch msg.String() {
+		case "esc":
+			m.cancelPrompt()
+			return m, nil
+		case "enter":
+			return m, m.advanceImport()
 		}
 	}
 	var cmd tea.Cmd
@@ -762,6 +858,10 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		m.openDeleteConfirm()
 		return m, nil
+	case "E":
+		return m, m.openExportForm()
+	case "I":
+		return m, m.openImportForm()
 	case "q":
 		return m, tea.Quit
 	case "/":
