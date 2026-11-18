@@ -10,31 +10,35 @@ import (
 	"github.com/erffanhub-00/cheat-terminal/internal/db"
 )
 
+// All colors are plain ANSI palette numbers ("0"-"255"), never hex or
+// truecolor: the browser must look right on any terminal, from Windows
+// Terminal to a bare xterm. The standard 16 are used where the look
+// allows; git orange has no match there, so it takes 208.
 var (
-	accentColor = lipgloss.Color("#38BDF8")
-	borderColor = lipgloss.Color("#475569")
-	dimColor    = lipgloss.Color("#94A3B8")
-	selBgColor  = lipgloss.Color("#1D4ED8")
-	favColor    = lipgloss.Color("#F59E0B")
-	okColor     = lipgloss.Color("#22C55E")
-	errColor    = lipgloss.Color("#EF4444")
-	darkText    = lipgloss.Color("#0F172A")
+	accentColor = lipgloss.Color("12") // bright blue
+	borderColor = lipgloss.Color("8")  // gray
+	dimColor    = lipgloss.Color("7")  // light gray
+	favColor    = lipgloss.Color("11") // bright yellow
+	okColor     = lipgloss.Color("10") // bright green
+	errColor    = lipgloss.Color("9")  // bright red
+	darkText    = lipgloss.Color("0")  // black, for text on chips
 
-	titleStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF"))
+	titleStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	headerTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 	dimStyle         = lipgloss.NewStyle().Foreground(dimColor)
 	keyStyle         = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
-	selectedStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Background(selBgColor).Bold(true)
 	okStyle          = lipgloss.NewStyle().Foreground(okColor)
 	errStyle         = lipgloss.NewStyle().Foreground(errColor)
 	favStyle         = lipgloss.NewStyle().Foreground(favColor).Bold(true)
+	arrowStyle       = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
+	selectedCmdStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 )
 
 // categoryPalette colors user-created categories: each name hashes to
 // one of these, so a category keeps its color across runs.
 var categoryPalette = []lipgloss.Color{
-	"#34D399", "#F472B6", "#FACC15", "#2DD4BF",
-	"#FB7185", "#A3E635", "#38BDF8", "#C084FC",
+	"2", "13", "11", "14",
+	"9", "10", "12", "5",
 }
 
 // categoryColor is the color of a category: the four built-in ones have
@@ -43,13 +47,13 @@ var categoryPalette = []lipgloss.Color{
 func categoryColor(name string) lipgloss.Color {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "linux":
-		return lipgloss.Color("#60A5FA")
+		return lipgloss.Color("12")
 	case "docker":
-		return lipgloss.Color("#22D3EE")
+		return lipgloss.Color("14")
 	case "git":
-		return lipgloss.Color("#FB923C")
+		return lipgloss.Color("208")
 	case "powershell":
-		return lipgloss.Color("#A78BFA")
+		return lipgloss.Color("13")
 	case "favorites", "★ favorites":
 		return favColor
 	case "all":
@@ -114,11 +118,11 @@ func tagChips(tags string, width int) []string {
 func levelColor(level int) lipgloss.Color {
 	switch level {
 	case db.LevelEssential:
-		return lipgloss.Color("#22C55E")
+		return lipgloss.Color("10")
 	case db.LevelCommon:
-		return lipgloss.Color("#EAB308")
+		return lipgloss.Color("11")
 	case db.LevelAdvanced:
-		return lipgloss.Color("#94A3B8")
+		return lipgloss.Color("8")
 	default:
 		return dimColor
 	}
@@ -250,16 +254,16 @@ func (m Model) viewSidebar(innerW, innerH int) string {
 	lines = append(lines, titleStyle.Render("Categories"))
 	lines = append(lines, dimStyle.Render(strings.Repeat("─", max(1, innerW))))
 	for i, item := range m.sides {
-		// The row is built one cell narrower than the box: non-selected
-		// rows get a leading space, and the selected row is padded by its
-		// style. A row exactly as wide as the box would wrap.
+		// The row is built one cell narrower than the box: a row exactly
+		// as wide as the box would wrap. Every row carries a 2-cell
+		// gutter: the active row has the same bold accent arrow as the
+		// result list, the others two spaces — no background fill.
 		w := innerW - 1
 		suffix := fmt.Sprintf("(%d)", item.count)
-		label := truncate(item.title, max(1, w-len(suffix)-3))
-		gap := w - 2 - lipgloss.Width(label) - len(suffix)
+		label := truncate(item.title, max(1, w-len(suffix)-4))
+		gap := w - 4 - lipgloss.Width(label) - len(suffix)
 		// Every row carries its category color: a colored dot, and a
-		// colored label when the row is not selected. The selected row
-		// keeps white text on the accent background so it stays readable.
+		// colored label. The active row's label is accent bold.
 		color := categoryColor(item.name)
 		if item.kind == sideFavorites {
 			color = favColor
@@ -267,14 +271,16 @@ func (m Model) viewSidebar(innerW, innerH int) string {
 			color = accentColor
 		}
 		dot := lipgloss.NewStyle().Foreground(color).Render("●")
+		var gutter, labelStyled string
 		if i == m.activeSide {
-			line := dot + " " + label + strings.Repeat(" ", max(0, gap)) + suffix
-			lines = append(lines, selectedStyle.Width(innerW).Render(line))
+			gutter = arrowStyle.Render("> ")
+			labelStyled = lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render(label)
 		} else {
-			colored := lipgloss.NewStyle().Foreground(color).Render(label)
-			line := dot + " " + colored + strings.Repeat(" ", max(0, gap)) + dimStyle.Render(suffix)
-			lines = append(lines, " "+line)
+			gutter = "  "
+			labelStyled = lipgloss.NewStyle().Foreground(color).Render(label)
 		}
+		line := gutter + dot + " " + labelStyled + strings.Repeat(" ", max(0, gap)) + dimStyle.Render(suffix)
+		lines = append(lines, line)
 	}
 	for len(lines) < innerH {
 		lines = append(lines, "")
@@ -307,8 +313,11 @@ func (m Model) viewList(listW, bodyH int) string {
 }
 
 // viewRowLines renders one entry as a single line plus a blank
-// separator: the level dot, the bold command and a star for favorites.
-// The description is not shown here; it lives in the detail pane.
+// separator. Every row carries a 2-cell gutter: the selected row has a
+// bold accent arrow that moves with the cursor, the others two spaces,
+// so rows never shift when the selection moves. There is no background
+// fill anywhere — the arrow is the cursor. The description is not
+// shown here; it lives in the detail pane.
 func (m Model) viewRowLines(e db.Entry, selected bool, listW int) []string {
 	star := ""
 	if e.Favorite {
@@ -318,13 +327,15 @@ func (m Model) viewRowLines(e db.Entry, selected bool, listW int) []string {
 	// styled string would break its escape codes.
 	cmd := truncate(e.Command, max(1, listW-7))
 	dot := lipgloss.NewStyle().Foreground(levelColor(e.Level)).Render("●")
-	line1 := dot + " " + titleStyle.Render(cmd) + star
+	var gutter, cmdStyled string
 	if selected {
-		line1 = selectedStyle.Width(listW).Render(line1)
+		gutter = arrowStyle.Render("> ")
+		cmdStyled = selectedCmdStyle.Render(cmd)
 	} else {
-		line1 = " " + line1
+		gutter = "  "
+		cmdStyled = titleStyle.Render(cmd)
 	}
-	return []string{line1, ""}
+	return []string{gutter + dot + " " + cmdStyled + star, ""}
 }
 
 // viewDetail renders the detail pane for the selected entry.
@@ -500,6 +511,7 @@ func (m Model) viewHelp() string {
 		"",
 		"ADD (a) — Command → Description → Category → Tags → Level",
 		"  New category name creates it · Level 1/2/3 (empty = 2)",
+		"EXPORT (E) — scope (all or a category), then filename",
 		"IMPORT (I) — file path, then category (empty = from file)",
 		"DELETE (d) — y deletes, n / Esc keeps it",
 		"",
@@ -653,15 +665,35 @@ func (m Model) viewDeleteConfirm() string {
 
 func (m Model) viewExportForm() string {
 	w := m.promptWidth()
+	var title, hint string
+	if m.exportStep == 0 {
+		title = "Export entries — step 1 of 2: Scope"
+		hint = "All, or a category name (Enter = all)."
+	} else {
+		title = "Export entries — step 2 of 2: File"
+		hint = "Filename (Enter = " + exportDefaultFilename(m.exportScope) + ")."
+	}
 	lines := []string{
-		headerTitleStyle.Render("Export entries"),
+		headerTitleStyle.Render(title),
 		"",
-		dimStyle.Render(truncate("Writes all entries as a JSON file (seed format).", w)),
+		dimStyle.Render(truncate(hint, w)),
 		dimStyle.Render(truncate("Give it to an AI to enrich, then import it back.", w)),
-		"",
-		m.formInput.View(),
-		"",
-		dimStyle.Render("Enter export · Esc cancel"),
+	}
+	if m.exportStep == 0 {
+		lines = append(lines, dimStyle.Render(truncate("Existing: "+m.categoryTitles(), w)))
+	} else if m.exportScope != "" {
+		lines = append(lines, dimStyle.Render(truncate("Category: "+titleCaseName(m.exportScope), w)))
+	}
+	lines = append(lines, "")
+	lines = append(lines, m.formInput.View())
+	if m.formErr != "" {
+		lines = append(lines, errStyle.Render(truncate(m.formErr, w)))
+	}
+	lines = append(lines, "")
+	if m.exportStep == 0 {
+		lines = append(lines, dimStyle.Render("Enter next step · Esc cancel"))
+	} else {
+		lines = append(lines, dimStyle.Render("Enter export · Esc cancel"))
 	}
 	return m.promptBox(lines)
 }

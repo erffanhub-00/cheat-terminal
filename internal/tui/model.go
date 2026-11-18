@@ -12,7 +12,8 @@
 //	List mode (Esc from search): Up/Down or j/k move, Enter/c copy,
 //	  s star or unstar a favorite, f filter by usefulness level,
 //	  a add an entry, C add a category, d delete an entry,
-//	  E export entries to a file, I import entries from a file,
+//	  E export entries to a file (scope, then filename),
+//	  I import entries from a file,
 //	  / back to search, q quit.
 //	Prompts (add entry, add category, delete, export, import): Enter
 //	  confirms each step, Esc cancels, y/n answers the delete question.
@@ -62,7 +63,7 @@ const (
 	promptAdd                 // sequential add-entry form, one field per step
 	promptCategory            // single-field add-category prompt
 	promptDelete              // y/n delete confirmation
-	promptExport              // single-field export filename prompt
+	promptExport              // two-step export: scope, then filename
 	promptImport              // two-step import: file path, then category
 )
 
@@ -110,6 +111,11 @@ type Model struct {
 	// prompts. It is separate from the search input, which keeps its
 	// value while a prompt is open.
 	formInput textinput.Model
+	// exportStep is the current step of the export prompt (0 = scope,
+	// 1 = filename), and exportScope holds the scope typed in step 0
+	// ("" = all entries, else a category name).
+	exportStep  int
+	exportScope string
 	// addStep is the current step of the add-entry form (0..addSteps-1).
 	addStep int
 	// addCmd, addDesc, addCat and addTags hold the values collected so
@@ -143,9 +149,10 @@ func New(store *db.Store, version string) Model {
 	return m
 }
 
-// Init starts the text-input cursor blink.
+// Init starts the text-input cursor blink and sets the terminal
+// tab/window title to the program name.
 func (m Model) Init() tea.Cmd {
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, tea.SetWindowTitle("cheat-terminal"))
 }
 
 // reload rebuilds the sidebar (categories + counts) and the total.
@@ -429,11 +436,15 @@ func (m *Model) openDeleteConfirm() {
 	m.status = ""
 }
 
-// openExportForm starts the export filename prompt (list mode only).
+// openExportForm starts the two-step export prompt (list mode only):
+// step 0 picks the scope (all entries or one category), step 1 the
+// filename.
 func (m *Model) openExportForm() tea.Cmd {
 	m.prompt = promptExport
+	m.exportStep = 0
+	m.exportScope = ""
 	m.formErr = ""
-	m.formInput = m.newFormInput("cheats-export.json")
+	m.formInput = m.newFormInput("All or a category name (Enter = all)")
 	m.status = ""
 	return textinput.Blink
 }
@@ -449,19 +460,67 @@ func (m *Model) openImportForm() tea.Cmd {
 	return textinput.Blink
 }
 
-// runExport writes all entries to the typed file (default name when the
-// field is empty) and reports how many were written.
+// exportDefaultFilename is the filename the export prompt suggests:
+// cheats-export.json for all entries, cheats-<category>.json for one
+// category (lowercase, spaces become hyphens).
+func exportDefaultFilename(scope string) string {
+	if scope == "" {
+		return "cheats-export.json"
+	}
+	safe := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(scope)), " ", "-")
+	return "cheats-" + safe + ".json"
+}
+
+// hasCategory reports whether the named category exists in the sidebar.
+func (m Model) hasCategory(name string) bool {
+	for _, s := range m.sides {
+		if s.kind == sideCategory && s.name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// advanceExport moves the export prompt one step forward, running the
+// export on the last step.
+func (m *Model) advanceExport() tea.Cmd {
+	v := strings.TrimSpace(m.formInput.Value())
+	if m.exportStep == 0 {
+		scope := normalizeCategoryName(v)
+		if scope == "" || scope == "all" {
+			m.exportScope = ""
+		} else {
+			if !m.hasCategory(scope) {
+				m.formErr = "Unknown category: " + v
+				return nil
+			}
+			m.exportScope = scope
+		}
+		m.exportStep = 1
+		m.formErr = ""
+		m.formInput = m.newFormInput(exportDefaultFilename(m.exportScope))
+		return textinput.Blink
+	}
+	return m.runExport()
+}
+
+// runExport writes the export scope to the typed file (default name when
+// the field is empty) and reports how many entries were written.
 func (m *Model) runExport() tea.Cmd {
 	path := strings.TrimSpace(m.formInput.Value())
 	if path == "" {
-		path = "cheats-export.json"
+		path = exportDefaultFilename(m.exportScope)
 	}
-	n, err := m.store.ExportToFile(path, "")
+	n, err := m.store.ExportToFile(path, m.exportScope)
+	scope := m.exportScope
 	m.cancelPrompt()
 	if err != nil {
 		return m.toast("Export failed: "+err.Error(), true)
 	}
-	return m.toast(fmt.Sprintf("Exported %d entries to %s", n, path), false)
+	if scope == "" {
+		return m.toast(fmt.Sprintf("Exported %d entries to %s", n, path), false)
+	}
+	return m.toast(fmt.Sprintf("Exported %d entries from %s to %s", n, scope, path), false)
 }
 
 // advanceImport moves the import prompt one step forward, running the
@@ -501,6 +560,8 @@ func (m *Model) cancelPrompt() {
 	m.formErr = ""
 	m.importStep = 0
 	m.importFile = ""
+	m.exportStep = 0
+	m.exportScope = ""
 	m.formInput.Blur()
 }
 
@@ -715,7 +776,7 @@ func (m Model) updatePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cancelPrompt()
 			return m, nil
 		case "enter":
-			return m, m.runExport()
+			return m, m.advanceExport()
 		}
 	case promptImport:
 		switch msg.String() {

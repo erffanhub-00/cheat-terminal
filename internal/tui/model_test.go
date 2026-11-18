@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/erffanhub-00/cheat-terminal/data"
 	"github.com/erffanhub-00/cheat-terminal/internal/db"
@@ -482,6 +485,45 @@ func firstRunes(s string, n int) string {
 	return string(r[:n])
 }
 
+var ansiRe = regexp.MustCompile("\x1b\\[[0-9;?]*[A-Za-z]|\x1b\\][^\x07]*\x07|\x1b[()][0-9A-B]|\x1b.")
+
+// stripANSI removes terminal escape sequences from s.
+func stripANSI(s string) string {
+	return ansiRe.ReplaceAllString(s, "")
+}
+
+// listLines returns the rendered result-list lines (raw, with escapes).
+func listLines(m Model) []string {
+	_, _, listW := m.layout()
+	return strings.Split(m.viewList(listW, m.bodyHeight()), "\n")
+}
+
+// strippedListLines returns the result-list lines with escapes removed.
+func strippedListLines(m Model) []string {
+	var out []string
+	for _, ln := range listLines(m) {
+		out = append(out, stripANSI(ln))
+	}
+	return out
+}
+
+// execCmd runs a command (and any batch it returns) and collects the
+// messages it produces.
+func execCmd(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		var out []tea.Msg
+		for _, c := range batch {
+			out = append(out, execCmd(c)...)
+		}
+		return out
+	}
+	return []tea.Msg{msg}
+}
+
 func TestTUISingleLineRows(t *testing.T) {
 	m := New(openSeededStore(t), "test")
 	// Single-line rows take 2 lines each (command + blank separator),
@@ -616,13 +658,28 @@ func TestTUIExportFlow(t *testing.T) {
 	m = toList(m)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "out.json")
-	// 'E' opens the export prompt.
+	// 'E' opens the export prompt at step 1 (scope).
 	m = update(m, keyMsg("E"))
-	if m.prompt != promptExport {
-		t.Fatalf("E did not open the export prompt: %d", m.prompt)
+	if m.prompt != promptExport || m.exportStep != 0 {
+		t.Fatalf("E did not open the export prompt: %d step %d", m.prompt, m.exportStep)
 	}
 	if !strings.Contains(m.View(), "Export entries") {
 		t.Fatalf("export prompt view missing")
+	}
+	if !strings.Contains(m.View(), "step 1 of 2") {
+		t.Fatalf("export prompt does not say step 1 of 2")
+	}
+	if !strings.Contains(m.View(), "Existing:") {
+		t.Fatalf("scope step does not list existing categories")
+	}
+	// An unknown category stays on step 1 with an inline error.
+	m = typeText(m, "bogus")
+	m = update(m, keyMsg("enter"))
+	if m.prompt != promptExport || m.exportStep != 0 {
+		t.Fatalf("unknown category left the scope step")
+	}
+	if !strings.Contains(m.formErr, "Unknown category") {
+		t.Fatalf("unknown category error = %q", m.formErr)
 	}
 	// Esc cancels without writing anything.
 	m = update(m, keyMsg("esc"))
@@ -632,8 +689,24 @@ func TestTUIExportFlow(t *testing.T) {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("cancelled export wrote a file")
 	}
-	// Type the path and export.
+	// Empty scope means all: Enter advances to the filename step with
+	// the all-entries default.
 	m = update(m, keyMsg("E"))
+	m = update(m, keyMsg("enter"))
+	if m.prompt != promptExport || m.exportStep != 1 {
+		t.Fatalf("after empty scope, step = %d, want 1", m.exportStep)
+	}
+	if m.formInput.Placeholder != "cheats-export.json" {
+		t.Fatalf("filename placeholder = %q, want cheats-export.json", m.formInput.Placeholder)
+	}
+	// Esc cancels from step 2 as well.
+	m = update(m, keyMsg("esc"))
+	if m.prompt != promptNone {
+		t.Fatalf("Esc did not cancel the export prompt from step 2")
+	}
+	// Type the path and export everything.
+	m = update(m, keyMsg("E"))
+	m = update(m, keyMsg("enter")) // empty scope -> all
 	m = typeText(m, path)
 	m = update(m, keyMsg("enter"))
 	if m.prompt != promptNone {
@@ -652,6 +725,84 @@ func TestTUIExportFlow(t *testing.T) {
 	}
 	if len(seed.Entries) != 1392 {
 		t.Fatalf("export file has %d entries, want 1392", len(seed.Entries))
+	}
+	// Per-category export: scope "docker" suggests cheats-docker.json
+	// and writes only that category.
+	catPath := filepath.Join(dir, "docker.json")
+	m = update(m, keyMsg("E"))
+	m = typeText(m, "docker")
+	m = update(m, keyMsg("enter"))
+	if m.prompt != promptExport || m.exportStep != 1 {
+		t.Fatalf("after docker scope, step = %d, want 1", m.exportStep)
+	}
+	if m.exportScope != "docker" {
+		t.Fatalf("export scope = %q, want docker", m.exportScope)
+	}
+	if m.formInput.Placeholder != "cheats-docker.json" {
+		t.Fatalf("filename placeholder = %q, want cheats-docker.json", m.formInput.Placeholder)
+	}
+	m = typeText(m, catPath)
+	m = update(m, keyMsg("enter"))
+	if m.prompt != promptNone {
+		t.Fatalf("category export did not close the prompt")
+	}
+	if !strings.Contains(m.status, "Exported 214 entries from docker to ") {
+		t.Fatalf("category export status = %q", m.status)
+	}
+	raw, err = os.ReadFile(catPath)
+	if err != nil {
+		t.Fatalf("category export file not written: %v", err)
+	}
+	if err := json.Unmarshal(raw, &seed); err != nil {
+		t.Fatalf("category export file is not valid JSON: %v", err)
+	}
+	if len(seed.Entries) != 214 || len(seed.Categories) != 1 {
+		t.Fatalf("category export has %d entries in %d categories, want 214 in 1",
+			len(seed.Entries), len(seed.Categories))
+	}
+	// The scope "all" is the same as an empty scope.
+	m = update(m, keyMsg("E"))
+	m = typeText(m, "all")
+	m = update(m, keyMsg("enter"))
+	if m.exportScope != "" || m.formInput.Placeholder != "cheats-export.json" {
+		t.Fatalf("scope all: scope %q placeholder %q", m.exportScope, m.formInput.Placeholder)
+	}
+}
+
+func TestTUIExportDefaultFilename(t *testing.T) {
+	if got := exportDefaultFilename(""); got != "cheats-export.json" {
+		t.Fatalf("default for all = %q", got)
+	}
+	if got := exportDefaultFilename("docker"); got != "cheats-docker.json" {
+		t.Fatalf("default for docker = %q", got)
+	}
+	if got := exportDefaultFilename("My Category"); got != "cheats-my-category.json" {
+		t.Fatalf("default for 'My Category' = %q", got)
+	}
+	// An empty filename really writes the default: run the flow in a
+	// temp working directory.
+	s := openSeededStore(t)
+	m := New(s, "test")
+	m = toList(m)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	m = update(m, keyMsg("E"))
+	m = typeText(m, "docker")
+	m = update(m, keyMsg("enter"))
+	m = update(m, keyMsg("enter")) // empty filename -> default
+	if m.prompt != promptNone {
+		t.Fatalf("export did not close after Enter")
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "cheats-docker.json"))
+	if err != nil {
+		t.Fatalf("default file not written: %v", err)
+	}
+	var seed db.SeedFile
+	if err := json.Unmarshal(raw, &seed); err != nil {
+		t.Fatalf("default file is not valid JSON: %v", err)
+	}
+	if len(seed.Entries) != 214 {
+		t.Fatalf("default file has %d entries, want 214", len(seed.Entries))
 	}
 }
 
@@ -738,5 +889,102 @@ func TestTUIImportFlow(t *testing.T) {
 	}
 	if !strings.Contains(m.status, "Import failed") {
 		t.Fatalf("missing-file status = %q", m.status)
+	}
+}
+
+func TestTUIArrowCursor(t *testing.T) {
+	// Force the richest color profile so the "no background" check is
+	// real: with a background fill the renderer would emit 48; codes.
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	m := New(openSeededStore(t), "test")
+	m = update(m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = toList(m)
+	rows := strippedListLines(m)
+	// The selected row (cursor 0) carries the arrow; the next row has
+	// the 2-space gutter, so nothing shifts when the cursor moves.
+	if !strings.HasPrefix(rows[0], "> ") {
+		t.Fatalf("selected row has no arrow: %q", rows[0])
+	}
+	if !strings.HasPrefix(rows[2], "  ") || strings.HasPrefix(rows[2], "> ") {
+		t.Fatalf("second row gutter wrong: %q", rows[2])
+	}
+	// No background fill on any row line: no 48; SGR sequence.
+	for _, ln := range listLines(m) {
+		if strings.Contains(ln, "48;") {
+			t.Fatalf("row line has a background fill: %q", ln)
+		}
+	}
+	// j moves the arrow down one row, k moves it back up.
+	m = update(m, keyMsg("j"))
+	rows = strippedListLines(m)
+	if !strings.HasPrefix(rows[0], "  ") || strings.HasPrefix(rows[0], "> ") {
+		t.Fatalf("arrow did not leave the first row: %q", rows[0])
+	}
+	if !strings.HasPrefix(rows[2], "> ") {
+		t.Fatalf("arrow did not move to the second row: %q", rows[2])
+	}
+	m = update(m, keyMsg("k"))
+	rows = strippedListLines(m)
+	if !strings.HasPrefix(rows[0], "> ") {
+		t.Fatalf("arrow did not move back to the first row: %q", rows[0])
+	}
+	// The sidebar's active row carries the same arrow, not a fill.
+	view := m.View()
+	if !strings.Contains(stripANSI(view), "> ● All") {
+		t.Fatalf("sidebar active row has no arrow")
+	}
+	for _, ln := range strings.Split(view, "\n") {
+		if strings.Contains(stripANSI(ln), "> ● All") && strings.Contains(ln, "48;") {
+			t.Fatalf("sidebar active row has a background fill: %q", ln)
+		}
+	}
+}
+
+func TestTUINoTruecolor(t *testing.T) {
+	// Force the richest profile: with hex colors the renderer would
+	// emit 24-bit sequences here, so their absence proves every color
+	// is an ANSI palette number.
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	m := New(openSeededStore(t), "test")
+	for _, size := range [][2]int{{60, 20}, {80, 24}, {120, 30}} {
+		m = update(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		view := m.View()
+		if strings.Contains(view, "38;2;") || strings.Contains(view, "48;2;") {
+			t.Fatalf("truecolor sequence in view at %dx%d", size[0], size[1])
+		}
+	}
+	// The help overlay and a prompt use the same styles: check them too.
+	m = update(m, keyMsg("?"))
+	view := m.View()
+	if strings.Contains(view, "38;2;") || strings.Contains(view, "48;2;") {
+		t.Fatalf("truecolor sequence in help view")
+	}
+	m = update(m, keyMsg("esc"))
+	m = toList(m)
+	m = update(m, keyMsg("a"))
+	view = m.View()
+	if strings.Contains(view, "38;2;") || strings.Contains(view, "48;2;") {
+		t.Fatalf("truecolor sequence in add-form view")
+	}
+	// ...and colors really are on (otherwise the check is vacuous).
+	m = update(m, keyMsg("esc"))
+	m = update(m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	if !strings.Contains(m.View(), "38;5;") {
+		t.Fatalf("no ANSI colors in the view at all — profile not applied?")
+	}
+}
+
+func TestTUIWindowTitle(t *testing.T) {
+	m := New(openSeededStore(t), "test")
+	msgs := execCmd(m.Init())
+	found := false
+	for _, msg := range msgs {
+		if fmt.Sprintf("%T", msg) == "tea.setWindowTitleMsg" &&
+			fmt.Sprintf("%v", msg) == "cheat-terminal" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Init did not set the window title: %#v", msgs)
 	}
 }
